@@ -17,6 +17,7 @@ vi.mock("react-hot-toast", () => ({
     loading: vi.fn(() => "toast-id"),
     success: vi.fn(),
     error: vi.fn(),
+    dismiss: vi.fn(),
   },
 }));
 
@@ -143,6 +144,19 @@ describe("handleAutoMatch", () => {
     expect(MusicProviderFactory.getProvider).not.toHaveBeenCalledWith(
       "netease"
     );
+  });
+
+  it("dismisses the loading toast when no fallback source is available", async () => {
+    const sourceTrack = createTrack("old", "netease");
+    useMusicStore.setState({
+      sourceConfigs: [{ source: "netease", enabled: true, visible: true }],
+    });
+
+    await handleAutoMatch(sourceTrack);
+
+    const { toast } = await import("react-hot-toast");
+    expect(toast.dismiss).toHaveBeenCalledWith("toast-id");
+    expect(MusicProviderFactory.getProvider).not.toHaveBeenCalled();
   });
 
   it("picks Wang Leehom's solo Ai Cuo over the first duet live result", async () => {

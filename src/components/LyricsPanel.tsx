@@ -230,7 +230,18 @@ export function LyricsPanel({ track, active = true }: LyricsPanelProps) {
   }, [handleScroll]);
 
   useEffect(() => {
-    if (!trackId || !source || !active) return;
+    setLyrics([]);
+    setError("");
+    setCenterLineIndex(-1);
+    setIsUserScrolling(false);
+    lineRefs.current = [];
+
+    if (!trackId || !source || !active) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
 
     if (!lyricId) {
       queueMicrotask(() => {
