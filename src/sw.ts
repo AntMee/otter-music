@@ -4,14 +4,9 @@ import { registerRoute } from "workbox-routing";
 import { NetworkFirst, CacheFirst } from "workbox-strategies";
 import { ExpirationPlugin } from "workbox-expiration";
 import { CacheableResponsePlugin } from "workbox-cacheable-response";
-import { clientsClaim } from "workbox-core";
 import { AUDIO_STREAM_CACHE_NAME } from "@/lib/sw-cache";
 
 declare let self: ServiceWorkerGlobalScope;
-
-// Auto-update: 立即激活新版本 Service Worker
-self.skipWaiting();
-clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST);
 
