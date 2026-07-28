@@ -16,7 +16,6 @@ const RE_CHINESE = /[\u4e00-\u9fa5]/g;
 const RE_SYMBOLS = /[^\p{L}\p{N}_]/gu;
 // \p{L} = 所有语言的字母, \p{N} = 所有数字 —— 避免误删韩文/日文等非 CJK 文字
 const RE_SPACES = /\s+/g;
-const RE_AUDIO_EXT = /\.(mp3|flac|m4a|wav|aac|ogg|ape)$/i;
 
 /* -------------------------------------------------- */
 /* 核心转换（DRY 原则：复用转小写、NFKC和简繁转换） */
@@ -34,7 +33,7 @@ export const convertT2SOnly = baseNorm;
 
 export const normalizeText = (v: string): string => {
   if (!v) return "";
-  const base = baseNorm(v.replace(RE_AUDIO_EXT, ""));
+  const base = baseNorm(v);
   const stripped = base
     .replace(RE_BRACKETS_G, " ")
     .replace(RE_SYMBOLS, "")

@@ -7,7 +7,6 @@ import {
   SearchIntent,
 } from "@/types/music";
 import { mergeAndSortTracks } from "@/lib/utils/search-helper";
-import { logger } from "@/lib/logger";
 
 type ProviderResolver = (source: MusicSource) => IMusicProvider;
 
@@ -38,8 +37,7 @@ export class AggregateProvider implements IMusicProvider {
             intent
           );
         } catch (e) {
-          if (signal?.aborted) throw e;
-          logger.warn("aggregate-provider", `Search failed for ${s}`, e);
+          console.warn(`Search failed for ${s}`, e);
           return { items: [], hasMore: false };
         }
       })

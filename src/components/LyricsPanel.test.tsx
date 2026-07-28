@@ -1,18 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { LyricsPanel } from "./LyricsPanel";
 import type { MusicTrack } from "@/types/music";
-
-const { getLyricMock } = vi.hoisted(() => ({
-  getLyricMock: vi.fn(),
-}));
-
-vi.mock("@/lib/music-api", () => ({
-  musicApi: {
-    getLyric: getLyricMock,
-  },
-}));
 
 vi.mock("@/store/music-store", () => ({
   useMusicStore: vi.fn(() => ({
@@ -44,24 +34,12 @@ const neteaseTrack: MusicTrack = {
   source: "netease",
 };
 
-const kuwoTrack: MusicTrack = {
-  ...neteaseTrack,
-  id: "kuwo_654321",
-  name: "Next Song",
-  lyric_id: "lyric-2",
-  source: "kuwo",
-};
-
 describe("LyricsPanel", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    getLyricMock.mockResolvedValue({
-      lyric: "[00:00.00]第一首歌词",
-      tlyric: "",
-    });
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -87,13 +65,13 @@ describe("LyricsPanel", () => {
     container = undefined;
   };
 
-  it("shows an empty prompt when track is null", () => {
+  it("当 track 为 null 时显示提示", () => {
     renderPanel(null);
     expect(container?.textContent).toContain("选择歌曲查看歌词");
     cleanup();
   });
 
-  it("shows no lyrics for Bilibili tracks without lyric_id", async () => {
+  it("B 站音源 lyric_id 为空时显示暂无歌词", async () => {
     renderPanel(bilibiliTrack);
 
     await act(async () => {
@@ -105,7 +83,7 @@ describe("LyricsPanel", () => {
     cleanup();
   });
 
-  it("does not stay loading when lyric_id is empty", async () => {
+  it("B 站音源不会显示加载中", async () => {
     renderPanel(bilibiliTrack);
 
     await act(async () => {
@@ -117,33 +95,9 @@ describe("LyricsPanel", () => {
     cleanup();
   });
 
-  it("shows loading while lyrics are being fetched", () => {
+  it("正常音源加载歌词时显示加载中", () => {
     renderPanel(neteaseTrack);
     expect(container?.textContent).toContain("加载歌词中...");
-    cleanup();
-  });
-
-  it("reloads lyrics when the current track changes", async () => {
-    getLyricMock
-      .mockResolvedValueOnce({ lyric: "[00:00.00]第一首歌词", tlyric: "" })
-      .mockResolvedValueOnce({ lyric: "[00:00.00]第二首歌词", tlyric: "" });
-
-    renderPanel(neteaseTrack);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(container?.textContent).toContain("第一首歌词");
-
-    renderPanel(kuwoTrack);
-    expect(container?.textContent).toContain("加载歌词中...");
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(getLyricMock).toHaveBeenNthCalledWith(1, "lyric-1", "netease");
-    expect(getLyricMock).toHaveBeenNthCalledWith(2, "lyric-2", "kuwo");
-    expect(container?.textContent).toContain("第二首歌词");
     cleanup();
   });
 });

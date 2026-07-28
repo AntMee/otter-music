@@ -30,11 +30,6 @@ const createTrack = (
 });
 
 describe("music-key match helpers", () => {
-  it("matches imported audio file names without file extensions", () => {
-    expect(isNameMatch("我的纸飞机.mp3", "我的纸飞机")).toBe(true);
-    expect(isNameContainsMatch("我的纸飞机.flac", "纸飞机")).toBe(true);
-  });
-
   it("matches name by alias rule", () => {
     expect(isNameMatch("夜曲（Live）", "Live")).toBe(true);
   });

@@ -122,7 +122,7 @@ export function MusicTrackItem({
     <div
       style={style}
       className={cn(
-        "group grid items-center gap-4 px-4 py-2.5 text-sm transition-all cursor-pointer md:px-5",
+        "group grid gap-4 items-center px-4 py-2.5 transition-all text-sm cursor-pointer",
         "grid-cols-[1.75rem_1fr_auto]",
         isSelected && showCheckbox ? "bg-primary/10" : "hover:bg-muted/50",
         className

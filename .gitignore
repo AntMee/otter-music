@@ -35,6 +35,8 @@ android/*.aab
 android/*.ap_
 android/*.jks
 android/*.keystore
+android/**/*.jks
+android/**/*.keystore
 android/.idea/
 android/captures/
 

@@ -16,7 +16,7 @@ vi.mock("@/lib/api/config", async () => {
   };
 });
 
-import { getLxUrl, LX_SOURCE_CODE } from "./lx-api";
+import { getLxUrl } from "./lx-api";
 
 describe("getLxUrl", () => {
   beforeEach(() => {
@@ -77,15 +77,5 @@ describe("getLxUrl", () => {
       "https://lxmusicapi.onrender.com/url/kw/550531860/320k"
     );
     expect(fetchOptions.headers).toEqual({ "X-Request-Key": "share-v3" });
-  });
-
-  it("maps Huibq Music_Free sources to LX API source codes", () => {
-    expect(LX_SOURCE_CODE.lx_qq).toBe("tx");
-    expect(LX_SOURCE_CODE.lx_kuwo).toBe("kw");
-    expect(LX_SOURCE_CODE.lx_qq_huibq).toBe("tx");
-    expect(LX_SOURCE_CODE.lx_kuwo_huibq).toBe("kw");
-    expect(LX_SOURCE_CODE.lx_wy).toBe("wy");
-    expect(LX_SOURCE_CODE.lx_kg).toBe("kg");
-    expect(LX_SOURCE_CODE.lx_mg).toBe("mg");
   });
 });

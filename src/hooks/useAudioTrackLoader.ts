@@ -7,71 +7,47 @@ import { useMusicStore } from "@/store/music-store";
 import { useSourceQualityStore } from "@/store/source-quality-store";
 import { useDownloadStore } from "@/store/download-store";
 import { useOfflineStore } from "@/store/offline-store";
+import { useUrlCacheStore, buildUrlCacheKey } from "@/store/url-cache-store";
 import {
   AUDIO_STREAM_CACHE_NAME,
-  hasCacheEntry,
   deleteCacheEntry,
+  hasCacheEntry,
 } from "@/lib/sw-cache";
 import { Capacitor } from "@capacitor/core";
 import { buildDownloadKey } from "@/lib/utils/download";
 import type { MusicSource } from "@/types/music";
 import toast from "react-hot-toast";
 import { handleAutoMatch } from "@/lib/audio-match";
-import { revokeBlobUrl } from "@/lib/utils/blob-registry";
 import { logger } from "@/lib/logger";
 
-const AUDIO_READY_TIMEOUT = 8000;
+const AUDIO_READY_TIMEOUT = 5000;
+const AUDIO_READY_TIMEOUT_SLOW = 15000;
+
+/** 根据 Network Information API 返回弱网下的超时时间 */
+function getAudioReadyTimeout(): number {
+  const conn = (navigator as any).connection;
+  if (!conn) return AUDIO_READY_TIMEOUT;
+
+  const { effectiveType } = conn;
+  // 仅在确属 2g 级别弱网时放宽超时；3g/4g/未知均按正常超时
+  // Android WebView 的 Network Information API 不可靠，downlink/rtt 量化指标易误判
+  if (effectiveType === "slow-2g" || effectiveType === "2g") {
+    return AUDIO_READY_TIMEOUT_SLOW;
+  }
+  return AUDIO_READY_TIMEOUT;
+}
+/** 代理 fallback 阶段专用超时，比主链路更短以加速失败放弃 */
+const AUDIO_READY_TIMEOUT_PROXY = 4000;
 
 /**
- * 快速检测音频 URL 是否可达
- * @param url 音频链接
- * @param timeout 超时时间 (毫秒)
+ * 持久化 URL 缓存：跨会话保持已解析的音频 URL，离线时复用
+ * 使用 useUrlCacheStore.getState() 在 React 渲染周期外访问
  */
-async function checkUrlReachable(
-  url: string,
-  timeout = 1500
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const controller = new AbortController();
-    let isTimeout = false;
-
-    const timer = setTimeout(() => {
-      isTimeout = true;
-      controller.abort();
-      resolve(false); // 超时判定为不可达
-    }, timeout);
-
-    fetch(url, { method: "HEAD", mode: "no-cors", signal: controller.signal })
-      .then(() => {
-        clearTimeout(timer);
-        resolve(true); // 只要有响应（即使是 403 等 HTTP 错误，由 audio 标签后续兜底）就认为网络连通
-      })
-      .catch((err) => {
-        clearTimeout(timer);
-        // 如果不是因为超时导致的 abort，说明是真实的网络不通/DNS污染
-        resolve(!isTimeout && err.name === "AbortError");
-      });
-  });
-}
-
-// 模块级 URL 缓存：跨渲染保持已解析的音频 URL，离线时复用
-const _urlMemoryCache = new Map<string, string>();
-const urlMemoryCache = {
-  get: (key: string) => _urlMemoryCache.get(key),
-  set: (key: string, value: string) => {
-    const old = _urlMemoryCache.get(key);
-    if (old && old !== value && old.startsWith("blob:")) {
-      revokeBlobUrl(old);
-    }
-    _urlMemoryCache.set(key, value);
-  },
-  delete: (key: string) => {
-    const old = _urlMemoryCache.get(key);
-    if (old?.startsWith("blob:")) {
-      revokeBlobUrl(old);
-    }
-    _urlMemoryCache.delete(key);
-  },
+const urlCache = {
+  get: (key: string) => useUrlCacheStore.getState().get(key),
+  set: (key: string, value: string) =>
+    useUrlCacheStore.getState().set(key, value),
+  delete: (key: string) => useUrlCacheStore.getState().delete(key),
 };
 
 type FallbackStage = "none" | "proxy" | "final";
@@ -91,7 +67,8 @@ function isTrackPlayable(
       return useDownloadStore.getState().hasRecord(downloadKey);
     }
     // Web 端：检查 offlineStore 是否有成功播放时记录的真实 URL
-    return useOfflineStore.getState().isRecordValid(track.id);
+    const offlineRecord = useOfflineStore.getState().records?.[track.id];
+    return Boolean(offlineRecord);
   }
 
   return true;
@@ -115,7 +92,7 @@ function findNextPlayableTrack(
 
 function waitForAudioReady(
   audio: HTMLAudioElement,
-  timeout = AUDIO_READY_TIMEOUT
+  timeout = getAudioReadyTimeout()
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -135,7 +112,16 @@ function waitForAudioReady(
     };
 
     const onReady = () => finish(resolve);
-    const onError = () => finish(() => reject(new Error("AUDIO_NOT_READY")));
+    const onError = () => {
+      const mediaError = audio.error;
+      finish(() =>
+        reject(
+          Object.assign(new Error("AUDIO_NOT_READY"), {
+            mediaErrorCode: mediaError?.code ?? null,
+          })
+        )
+      );
+    };
     const timer = setTimeout(
       () => finish(() => reject(new Error("AUDIO_READY_TIMEOUT"))),
       timeout
@@ -203,6 +189,7 @@ export function useAudioTrackLoader(
   const quality = useMusicStore((s) => s.quality);
   const currentAudioTime = useMusicStore((s) => s.currentAudioTime);
   const hasUserGesture = useMusicStore((s) => s.hasUserGesture);
+  const enableProxyFallback = useMusicStore((s) => s.enableProxyFallback);
   const setIsPlaying = useMusicStore((s) => s.setIsPlaying);
   const setIsLoading = useMusicStore((s) => s.setIsLoading);
   const skipToNext = useMusicStore((s) => s.skipToNext);
@@ -243,7 +230,12 @@ export function useAudioTrackLoader(
 
     const load = async () => {
       const audio = audioRef.current!;
-      const trackKey = `${currentTrackSource}:${currentTrackId}:${currentTrackUrlId ?? ""}`;
+      const trackKey = buildUrlCacheKey(
+        currentTrackSource,
+        currentTrackId,
+        currentTrackUrlId,
+        quality
+      );
       if (fallbackStageRef.current.trackKey !== trackKey) {
         fallbackStageRef.current = { trackKey, stage: "none" };
         remoteUrlRef.current = null;
@@ -251,45 +243,50 @@ export function useAudioTrackLoader(
 
       const getRemoteUrl = async () => {
         if (remoteUrlRef.current) return remoteUrlRef.current;
-        // 离线时优先用缓存 URL，避免 API 调用失败
-        if (!navigator.onLine) {
-          const memCached = urlMemoryCache.get(trackKey);
-          if (memCached) {
-            // 用当前后端域名重新包装，避免死域名和 Mixed Content
-            const finalUrl = normalizeAudioUrlForPlayback(memCached);
-            urlMemoryCache.set(trackKey, finalUrl);
+
+        // 无论在线离线，优先使用已缓存的 URL，避免重复调 API 覆盖 SW 缓存
+        const memCached = urlCache.get(trackKey);
+        if (memCached) {
+          const finalUrl = normalizeAudioUrlForPlayback(memCached);
+          if (
+            navigator.onLine ||
+            (await hasCacheEntry(AUDIO_STREAM_CACHE_NAME, finalUrl))
+          ) {
             remoteUrlRef.current = finalUrl;
             return finalUrl;
           }
-          const offlineRecord = currentTrackId
-            ? useOfflineStore.getState().getRecord(currentTrackId)
-            : null;
-          if (offlineRecord) {
-            const cacheKey =
-              offlineRecord.cacheKey ||
-              normalizeAudioUrlForPlayback(offlineRecord.url);
-            const isCached = await hasCacheEntry(
-              AUDIO_STREAM_CACHE_NAME,
-              cacheKey
-            );
-            if (isCached) {
-              urlMemoryCache.set(trackKey, cacheKey);
-              remoteUrlRef.current = cacheKey;
-              return cacheKey;
-            }
-            // 缓存条目已失效/被淘汰，清理离线记录与 SW 缓存条目
-            useOfflineStore.getState().removeRecord(currentTrackId);
-            await deleteCacheEntry(AUDIO_STREAM_CACHE_NAME, cacheKey);
-            logger.warn(
-              "useAudioTrackLoader",
-              "Offline cache entry missing, removed stale record",
-              {
-                trackId: currentTrackId,
-                cacheKey,
-              }
-            );
-          }
+          urlCache.delete(trackKey);
         }
+
+        const offlineRecord = currentTrackId
+          ? useOfflineStore.getState().getRecord(currentTrackId)
+          : null;
+        if (offlineRecord?.url) {
+          const cacheKey =
+            offlineRecord.cacheKey ||
+            normalizeAudioUrlForPlayback(offlineRecord.url);
+          if (
+            navigator.onLine ||
+            (await hasCacheEntry(AUDIO_STREAM_CACHE_NAME, cacheKey))
+          ) {
+            urlCache.set(trackKey, cacheKey);
+            remoteUrlRef.current = cacheKey;
+            return cacheKey;
+          }
+
+          useOfflineStore.getState().removeRecord(currentTrackId!);
+          await deleteCacheEntry(AUDIO_STREAM_CACHE_NAME, cacheKey);
+          logger.warn(
+            "useAudioTrackLoader",
+            "Offline cache entry missing, removed stale record",
+            { trackId: currentTrackId, cacheKey }
+          );
+        }
+
+        // 离线且无任何缓存时，返回空 URL（外部 catch 处理跳过逻辑）
+        if (!navigator.onLine) return "";
+
+        // 在线且无缓存时，调用 API 获取播放 URL
         const urlId =
           (currentTrackSource as string) === "local" ||
           currentTrackSource === "podcast"
@@ -301,44 +298,34 @@ export function useAudioTrackLoader(
           quality: parseInt(quality, 10),
         });
 
-        // 新 URL 与旧缓存 key 不一致时，清理旧 SW 缓存条目与旧离线记录
         if (currentTrackId) {
-          const offlineRecord = useOfflineStore
-            .getState()
-            .getRecord(currentTrackId);
-          if (offlineRecord) {
-            const oldCacheKey =
-              offlineRecord.cacheKey ||
-              normalizeAudioUrlForPlayback(offlineRecord.url);
-            if (oldCacheKey !== remoteUrl) {
-              await deleteCacheEntry(AUDIO_STREAM_CACHE_NAME, oldCacheKey);
-              useOfflineStore.getState().removeRecord(currentTrackId);
-              logger.info(
-                "useAudioTrackLoader",
-                "URL changed, cleaned old offline record",
-                {
-                  trackId: currentTrackId,
-                  oldCacheKey,
-                  newUrl: remoteUrl,
-                }
-              );
-            }
+          const previous = useOfflineStore.getState().getRecord(currentTrackId);
+          const previousCacheKey = previous?.cacheKey || previous?.url;
+          if (previousCacheKey && previousCacheKey !== remoteUrl) {
+            await deleteCacheEntry(
+              AUDIO_STREAM_CACHE_NAME,
+              normalizeAudioUrlForPlayback(previousCacheKey)
+            );
+            useOfflineStore.getState().removeRecord(currentTrackId);
           }
         }
-
-        urlMemoryCache.set(trackKey, remoteUrl);
+        urlCache.set(trackKey, remoteUrl);
         remoteUrlRef.current = remoteUrl;
         return remoteUrl;
       };
 
-      const setSourceAndPlay = async (audioUrl: string, startTime?: number) => {
+      const setSourceAndPlay = async (
+        audioUrl: string,
+        startTime?: number,
+        timeout?: number
+      ) => {
         if (audio.src !== audioUrl) {
           setCurrentAudioUrl(audioUrl);
           audio.src = "";
           audio.src = audioUrl;
           audio.load();
         }
-        await waitForAudioReady(audio);
+        await waitForAudioReady(audio, timeout);
         audio.currentTime = startTime ?? currentAudioTime;
         audio.playbackRate = useMusicStore.getState().playbackSpeed;
         await audio.play();
@@ -404,7 +391,7 @@ export function useAudioTrackLoader(
         const hasDownload = Boolean(localDownloadUrl);
 
         if (!isLocal && !hasDownload && !isOnline) {
-          // 先尝试走缓存链路（urlMemoryCache → cachedFetch → SW），全部失败再判定不可播
+          // 先尝试走缓存链路（urlCache → cachedFetch → SW），全部失败再判定不可播
           try {
             const remoteUrl = await getRemoteUrl();
             if (remoteUrl) {
@@ -441,18 +428,17 @@ export function useAudioTrackLoader(
         try {
           const primaryUrl = localDownloadUrl || (await getRemoteUrl());
 
-          // 新增：如果是在线 HTTP 链接，执行 1.5 秒快速探测
-          if (!localDownloadUrl && primaryUrl.startsWith("http")) {
-            const isReachable = await checkUrlReachable(primaryUrl, 1500);
-            if (!isReachable) {
-              // 抛出特定错误，直接跳过 8 秒等待，进入 catch 触发代理
-              throw new Error("PRECHECK_UNREACHABLE");
-            }
-          }
-
           await setSourceAndPlay(primaryUrl, resumeTime);
         } catch (primaryError) {
           console.error("Primary audio load failed:", primaryError);
+
+          // NotAllowedError（autoplay 被拦截）不触发代理
+          if (
+            primaryError instanceof DOMException &&
+            primaryError.name === "NotAllowedError"
+          ) {
+            throw primaryError;
+          }
 
           if (
             downloadKey &&
@@ -473,6 +459,7 @@ export function useAudioTrackLoader(
           }
 
           if (
+            enableProxyFallback &&
             currentTrackSource !== "local" &&
             fallbackStageRef.current.stage === "none" &&
             remoteUrlRef.current &&
@@ -485,7 +472,11 @@ export function useAudioTrackLoader(
               : getProxyUrl(remoteUrl);
             fallbackStageRef.current.stage = "proxy";
             toast("已切换备用线路", { icon: "🌐", id: "proxy-notice" });
-            await setSourceAndPlay(proxyUrl, resumeTime);
+            await setSourceAndPlay(
+              proxyUrl,
+              resumeTime,
+              AUDIO_READY_TIMEOUT_PROXY
+            );
             return;
           }
 
@@ -505,29 +496,6 @@ export function useAudioTrackLoader(
           }
         );
 
-        // 播放失败时清理当前曲目的离线记录与 SW 缓存条目，避免反复使用失效缓存
-        if (currentTrackId) {
-          const offlineRecord = useOfflineStore
-            .getState()
-            .getRecord(currentTrackId);
-          if (offlineRecord) {
-            const cacheKey =
-              offlineRecord.cacheKey ||
-              normalizeAudioUrlForPlayback(offlineRecord.url);
-            useOfflineStore.getState().removeRecord(currentTrackId);
-            await deleteCacheEntry(AUDIO_STREAM_CACHE_NAME, cacheKey);
-            logger.warn(
-              "useAudioTrackLoader",
-              "Cleaned stale offline record on playback failure",
-              {
-                trackId: currentTrackId,
-                cacheKey,
-              }
-            );
-          }
-          urlMemoryCache.delete(trackKey);
-        }
-
         if (useMusicStore.getState().enableAutoMatch) {
           try {
             const success = await handleAutoMatch(currentTrack);
@@ -542,6 +510,29 @@ export function useAudioTrackLoader(
 
         if (currentTrackSource) {
           useSourceQualityStore.getState().recordFail(currentTrackSource);
+        }
+
+        // 播放链路已经穷尽时，同时清理 Cache Storage 与两份元数据，
+        // 避免后续重复选择已经失效的 URL。
+        if (currentTrackId && currentTrackSource) {
+          const staleRecord = useOfflineStore
+            .getState()
+            .getRecord(currentTrackId);
+          if (staleRecord) {
+            await deleteCacheEntry(
+              AUDIO_STREAM_CACHE_NAME,
+              staleRecord.cacheKey ||
+                normalizeAudioUrlForPlayback(staleRecord.url)
+            );
+            useOfflineStore.getState().removeRecord(currentTrackId);
+          }
+          const staleKey = buildUrlCacheKey(
+            currentTrackSource,
+            currentTrackId,
+            currentTrackUrlId,
+            quality
+          );
+          urlCache.delete(staleKey);
         }
 
         fallbackStageRef.current.stage = "final";

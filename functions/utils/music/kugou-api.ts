@@ -2,10 +2,8 @@ import {
   buildKugouAndroidHeaders,
   buildKugouDeviceRegistrationPayload,
   convertKugouSongToMusicTrack,
-  fetchKugouCodePlaylistDetail,
   fetchKugouGlobalPlaylistPages,
   fetchKugouPlaylistPages,
-  isKugouCodeInput,
   isKugouGlobalCollectionId,
   KUGOU_PAGE_SIZE,
   parseKugouDeviceRegistrationResponse,
@@ -69,18 +67,6 @@ async function ensureServerDeviceDfid(mid: string): Promise<string> {
 export async function fetchKugouPlaylistDetail(
   playlistId: string
 ): Promise<KugouPlaylistDetail> {
-  if (isKugouCodeInput(playlistId)) {
-    return fetchKugouCodePlaylistDetail(playlistId, async (url, body) => {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`Kugou code API error: ${res.status}`);
-      return res.json();
-    });
-  }
-
   if (isKugouGlobalCollectionId(playlistId)) {
     const mid = getServerDeviceMid();
     const dfid = await ensureServerDeviceDfid(mid);

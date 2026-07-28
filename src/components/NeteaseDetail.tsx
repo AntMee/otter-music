@@ -25,6 +25,7 @@ import {
   ListMusic,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { writeClipboardText } from "@/lib/clipboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,15 +38,12 @@ import { useShallow } from "zustand/react/shallow";
 import { useNeteaseStore } from "@/store/netease-store";
 import { SongDetail } from "@/lib/netease/netease-raw-types";
 import { ArtistAlbumSheet } from "@/components/ArtistAlbumSheet";
-import {
-  ArtistAlbumSheetNavigationState,
-  createArtistAlbumSheetState,
-  getArtistAlbumSheetBackTarget,
-  shouldRestoreArtistAlbumSheet,
-} from "@/lib/navigation/netease-detail-navigation";
+import type { ArtistAlbumSheetNavigationState } from "@/lib/navigation/netease-detail-navigation";
+import { useArtistAlbumSheet } from "@/hooks/useArtistAlbumSheet";
 import { useMarketSession } from "@/store/session/market-session";
 import { logger } from "@/lib/logger";
 import { useDetailPage } from "@/hooks/useDetailPage";
+import { useExitLayer } from "@/hooks/useExitLayer";
 
 interface NeteaseDetailProps {
   id: string | null;
@@ -80,7 +78,6 @@ export function NeteaseDetail({
   const navigate = useNavigate();
   const location = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [isAlbumSheetOpen, setIsAlbumSheetOpen] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -98,6 +95,21 @@ export function NeteaseDetail({
   const navigationState =
     (location.state as ArtistAlbumSheetNavigationState | null | undefined) ??
     null;
+  const { push: pushExitLayer, pop: popExitLayer } = useExitLayer();
+
+  const {
+    isOpen: isAlbumSheetOpen,
+    setIsOpen: setIsAlbumSheetOpen,
+    handleBack,
+  } = useArtistAlbumSheet({
+    id,
+    type,
+    navigationState,
+    pathname: location.pathname,
+    navigate,
+    pushExitLayer,
+    popExitLayer,
+  });
 
   const { loading, error, detail, tracks, setDetail, setTracks, retry } =
     useDetailPage<UnifiedDetail>(
@@ -164,40 +176,19 @@ export function NeteaseDetail({
     }
   }, [type, detail, tracks]);
 
-  useEffect(() => {
-    if (!shouldRestoreArtistAlbumSheet(type, id, navigationState)) return;
-    setIsAlbumSheetOpen(true);
-
-    navigate(location.pathname, { replace: true, state: null });
-  }, [id, location.pathname, navigate, navigationState, type]);
-
-  const handleBack = () => {
-    const backTarget = getArtistAlbumSheetBackTarget(type, navigationState);
-    if (backTarget) {
-      navigate(`/netease-artist/${backTarget.artistId}`, {
-        replace: true,
-        state: createArtistAlbumSheetState(
-          backTarget.artistId,
-          backTarget.artistName
-        ),
-      });
-      return;
-    }
-
-    onBack();
+  const onHeaderBack = () => {
+    handleBack(onBack);
   };
 
   const handleShare = async () => {
     if (!detail || !id) return;
-    try {
-      const typeLabel = { playlist: "歌单", artist: "歌手", album: "专辑" }[
-        type
-      ];
-      await navigator.clipboard.writeText(
-        `【网易云${typeLabel}】${detail.name}\nhttps://music.163.com/#/${type}?id=${id}`
-      );
+    const typeLabel = { playlist: "歌单", artist: "歌手", album: "专辑" }[type];
+    const ok = await writeClipboardText(
+      `【网易云${typeLabel}】${detail.name}\nhttps://music.163.com/#/${type}?id=${id}`
+    );
+    if (ok) {
       toast.success("链接已复制");
-    } catch {
+    } else {
       toast.error("复制失败");
     }
   };
@@ -360,7 +351,7 @@ export function NeteaseDetail({
       loading={loading}
       error={error}
       title="详情"
-      onBack={handleBack}
+      onBack={onHeaderBack}
       onRetry={retry}
       detail={genericDetail}
       scrollRef={scrollRef}

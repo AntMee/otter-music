@@ -247,8 +247,10 @@ async function getKugouCodePlaylistDetail(
   let callIndex = 0;
   return fetchKugouCodePlaylistDetail(codeInput, async (_url, body) => {
     callIndex += 1;
-    const endpoint =
-      callIndex === 1 ? "/api/kugou-code-command" : "/api/kugou-code-playlist";
+    const route = callIndex === 1 ? "code-command" : "code-playlist";
+    const endpoint = IS_WEB_PROD
+      ? `${getApiUrl()}/music-api/kugou/${route}`
+      : `/api/kugou-${route}`;
     const res = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

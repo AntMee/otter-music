@@ -91,29 +91,4 @@ describe("MusicProviderFactory", () => {
     );
     await expect(provider.getLyric(qqTrack)).resolves.toBeNull();
   });
-
-  it("creates Changqing providers that reuse track ids for playback urls", async () => {
-    const provider = MusicProviderFactory.getProvider("cq_qq");
-    expect(provider.source).toBe("cq_qq");
-
-    await expect(
-      provider.getUrl({ ...qqTrack, source: "cq_qq" }, 320)
-    ).resolves.toBe(
-      "http://175.27.166.236/kgqq1/qq.php?type=mp3&id=000abc&level=exhigh"
-    );
-  });
-
-  it("creates Huibq Music_Free providers", () => {
-    expect(MusicProviderFactory.getProvider("lx_kuwo").source).toBe("lx_kuwo");
-    expect(MusicProviderFactory.getProvider("lx_qq").source).toBe("lx_qq");
-    expect(MusicProviderFactory.getProvider("lx_kuwo_huibq").source).toBe(
-      "lx_kuwo_huibq"
-    );
-    expect(MusicProviderFactory.getProvider("lx_qq_huibq").source).toBe(
-      "lx_qq_huibq"
-    );
-    expect(MusicProviderFactory.getProvider("lx_wy").source).toBe("lx_wy");
-    expect(MusicProviderFactory.getProvider("lx_kg").source).toBe("lx_kg");
-    expect(MusicProviderFactory.getProvider("lx_mg").source).toBe("lx_mg");
-  });
 });

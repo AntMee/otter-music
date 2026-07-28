@@ -17,7 +17,6 @@ vi.mock("react-hot-toast", () => ({
     loading: vi.fn(() => "toast-id"),
     success: vi.fn(),
     error: vi.fn(),
-    dismiss: vi.fn(),
   },
 }));
 
@@ -117,6 +116,7 @@ describe("handleAutoMatch", () => {
       queue: [],
       originalQueue: [],
       currentIndex: 0,
+      autoMatchContext: null,
       sourceConfigs: [
         { source: "joox", enabled: true, visible: true },
         { source: "netease", enabled: true, visible: true },
@@ -144,19 +144,6 @@ describe("handleAutoMatch", () => {
     expect(MusicProviderFactory.getProvider).not.toHaveBeenCalledWith(
       "netease"
     );
-  });
-
-  it("dismisses the loading toast when no fallback source is available", async () => {
-    const sourceTrack = createTrack("old", "netease");
-    useMusicStore.setState({
-      sourceConfigs: [{ source: "netease", enabled: true, visible: true }],
-    });
-
-    await handleAutoMatch(sourceTrack);
-
-    const { toast } = await import("react-hot-toast");
-    expect(toast.dismiss).toHaveBeenCalledWith("toast-id");
-    expect(MusicProviderFactory.getProvider).not.toHaveBeenCalled();
   });
 
   it("picks Wang Leehom's solo Ai Cuo over the first duet live result", async () => {
@@ -214,7 +201,7 @@ describe("handleAutoMatch", () => {
     expect(state.playlists[0]?.tracks[0]?.id).toBe("old");
   });
 
-  it("keeps playlists unchanged when auto match is used in playlist context", async () => {
+  it("updates queue and playlists when contextId is 'playlist-xxx'", async () => {
     const sourceTrack = createTrack("old", "netease");
     const match = createTrack("new", "joox");
     useMusicStore.setState({
@@ -241,7 +228,7 @@ describe("handleAutoMatch", () => {
 
     const state = useMusicStore.getState();
     expect(state.queue[0]?.id).toBe("new");
-    expect(state.playlists[0]?.tracks[0]?.id).toBe("old");
+    expect(state.playlists[0]?.tracks[0]?.id).toBe("new");
     expect(state.favorites[0]?.id).toBe("old");
   });
 
@@ -276,34 +263,22 @@ describe("handleAutoMatch", () => {
     expect(state.playlists[0]?.tracks[0]?.id).toBe("old");
   });
 
-  it("keeps imported playlist metadata when auto match falls back to another source", async () => {
-    const sourceTrack = createTrack("kugou_HASH", "kugou", "我的纸飞机", [
-      "GooGoo",
-      "王之睿",
-    ]);
-    const match = createTrack(
-      "bvid_BV123",
-      "bilibili",
-      "我的纸飞机 - GooGoo/王之睿「我的纸飞机呀飞呀飞到了芦苇边」【动态歌词】",
-      ["一半耳机给你"]
-    );
+  it("updates favorites when autoMatchFavorites is true", async () => {
+    const sourceTrack = createTrack("old", "netease");
+    const match = createTrack("new", "joox");
     useMusicStore.setState({
       queue: [sourceTrack],
       originalQueue: [sourceTrack],
-      playlists: [
-        { id: "p1", name: "青听", tracks: [sourceTrack], createdAt: 0 },
-      ],
-      contextId: "playlist-p1",
-      bilibiliKeepOriginalMeta: false,
+      favorites: [sourceTrack],
+      contextId: "favorites",
+      autoMatchFavorites: true,
     });
     const search = vi
       .fn()
       .mockResolvedValue({ items: [match], hasMore: false });
     vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
-      source: "bilibili",
+      source: "joox",
       search,
-      getAutoMatchPredicate: () => (item: MusicTrack) =>
-        item.id === "bvid_BV123",
       getUrl: vi.fn(),
       getPic: vi.fn(),
       getLyric: vi.fn(),
@@ -312,17 +287,149 @@ describe("handleAutoMatch", () => {
     await handleAutoMatch(sourceTrack);
 
     const state = useMusicStore.getState();
-    expect(state.queue[0]).toMatchObject({
-      id: "bvid_BV123",
-      source: "bilibili",
-      name: "我的纸飞机",
-      artist: ["GooGoo", "王之睿"],
+    expect(state.queue[0]?.id).toBe("new");
+    expect(state.favorites[0]?.id).toBe("new");
+  });
+
+  it("does not update playlists when autoMatchPlaylists is false", async () => {
+    const sourceTrack = createTrack("old", "netease");
+    const match = createTrack("new", "joox");
+    useMusicStore.setState({
+      queue: [sourceTrack],
+      originalQueue: [sourceTrack],
+      playlists: [
+        { id: "p1", name: "歌单", tracks: [sourceTrack], createdAt: 0 },
+      ],
+      contextId: "playlist-p1",
+      autoMatchPlaylists: false,
     });
-    expect(state.playlists[0]?.tracks[0]).toMatchObject({
-      id: "kugou_HASH",
-      source: "kugou",
-      name: "我的纸飞机",
-      artist: ["GooGoo", "王之睿"],
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items: [match], hasMore: false });
+    vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
+      source: "joox",
+      search,
+      getUrl: vi.fn(),
+      getPic: vi.fn(),
+      getLyric: vi.fn(),
     });
+
+    await handleAutoMatch(sourceTrack);
+
+    const state = useMusicStore.getState();
+    expect(state.queue[0]?.id).toBe("new");
+    expect(state.playlists[0]?.tracks[0]?.id).toBe("old");
+  });
+
+  it("excludes previously tried source on second auto match", async () => {
+    // 模拟第一次换源后的状态：netease → joox
+    const sourceTrack = createTrack("old", "netease");
+    const match1 = createTrack("new-joox", "joox");
+    const match2 = createTrack("new-kuwo", "kuwo");
+
+    // 先完成一次从 netease 到 joox 的换源
+    const search1 = vi
+      .fn()
+      .mockResolvedValue({ items: [match1], hasMore: false });
+    vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
+      source: "joox",
+      search: search1,
+      getUrl: vi.fn(),
+      getPic: vi.fn(),
+      getLyric: vi.fn(),
+    });
+
+    await handleAutoMatch(sourceTrack);
+
+    // 验证第一次换源后 autoMatchContext 记录了 netease
+    expect(
+      useMusicStore.getState().autoMatchContext?.tried.has("netease")
+    ).toBe(true);
+
+    // 模拟第二次换源：当前 track 是 joox（第一次换源后的结果）
+    const currentTrack = { ...match1 };
+    vi.mocked(MusicProviderFactory.getProvider).mockClear();
+    useMusicStore.setState({
+      queue: [currentTrack],
+      originalQueue: [currentTrack],
+    });
+
+    const search2 = vi
+      .fn()
+      .mockResolvedValue({ items: [match2], hasMore: false });
+    vi.mocked(MusicProviderFactory.getProvider).mockImplementation(
+      (source: string) => ({
+        source: source as MusicSource,
+        search: source === "kuwo" ? search2 : vi.fn(),
+        getUrl: vi.fn(),
+        getPic: vi.fn(),
+        getLyric: vi.fn(),
+      })
+    );
+
+    await handleAutoMatch(currentTrack);
+
+    // netease 不应该被搜索（已尝试过）
+    expect(MusicProviderFactory.getProvider).not.toHaveBeenCalledWith(
+      "netease"
+    );
+    // joox 不应该被搜索（当前源）
+    expect(MusicProviderFactory.getProvider).not.toHaveBeenCalledWith("joox");
+    // kuwo 应该被搜索
+    expect(MusicProviderFactory.getProvider).toHaveBeenCalledWith("kuwo");
+  });
+
+  it("resets tried sources when currentIndex changes", async () => {
+    // 先完成一次换源，让 autoMatchContext 有数据
+    const sourceTrack = createTrack("old", "netease");
+    const match1 = createTrack("new-joox", "joox");
+    const search1 = vi
+      .fn()
+      .mockResolvedValue({ items: [match1], hasMore: false });
+    vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
+      source: "joox",
+      search: search1,
+      getUrl: vi.fn(),
+      getPic: vi.fn(),
+      getLyric: vi.fn(),
+    });
+
+    await handleAutoMatch(sourceTrack);
+
+    // 确认 tried 中有 netease
+    expect(
+      useMusicStore.getState().autoMatchContext?.tried.has("netease")
+    ).toBe(true);
+
+    // 模拟切歌：currentIndex 变化
+    const newTrack = createTrack("other", "netease");
+    vi.clearAllMocks();
+    vi.mocked(MusicProviderFactory.getProvider).mockReset();
+    useMusicStore.setState({
+      currentIndex: 1,
+      queue: [sourceTrack, newTrack],
+      originalQueue: [sourceTrack, newTrack],
+    });
+
+    const search2 = vi
+      .fn()
+      .mockResolvedValue({ items: [match1], hasMore: false });
+    vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
+      source: "joox",
+      search: search2,
+      getUrl: vi.fn(),
+      getPic: vi.fn(),
+      getLyric: vi.fn(),
+    });
+
+    await handleAutoMatch(newTrack);
+
+    // 切歌后 tried 应重置，netease 可以被搜索（作为新的候选排除逻辑）
+    // 由于新 track 的 source 也是 netease，当前源 netease 仍应被排除
+    expect(MusicProviderFactory.getProvider).not.toHaveBeenCalledWith(
+      "netease"
+    );
+    // autoMatchContext 应更新为新的 index
+    expect(useMusicStore.getState().autoMatchContext?.index).toBe(1);
   });
 });

@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { createPortal } from "react-dom";
-import { useState, useEffect, memo, useMemo, useCallback, useRef } from "react";
+import { memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LyricsPanel } from "./LyricsPanel";
@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { useMounted } from "@/hooks/use-mounted";
+import { usePlayerActions } from "@/hooks/usePlayerActions";
+import { usePlayerUIState } from "@/hooks/usePlayerUIState";
 import { PlayerQueueDrawer } from "./PlayerQueueDrawer";
 import { MusicTrackMobileMenu } from "./MusicTrackMobileMenu";
 import { AddToPlaylistDrawer } from "./AddToPlaylistDrawer";
@@ -39,10 +41,8 @@ import {
 } from "@/store/music-store";
 import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
-import { ColorExtractor } from "react-color-extractor";
-import { pickBestColor } from "@/lib/utils/color";
-import { getCanonicalShareUrl } from "@/lib/share-url";
-import { toastUtils } from "@/lib/utils/toast";
+import { useCoverColors } from "@/hooks/useCoverColors";
+import { pickBestColor, createBackgroundColor } from "@/lib/utils/color";
 
 interface ModeIconProps {
   isRepeat: boolean;
@@ -81,8 +81,8 @@ const BackgroundLayer = memo(
     }, [hslColor, showThemeColor]);
 
     return (
-      <div className="absolute inset-0 z-0 overflow-hidden bg-zinc-950">
-        {/* 鍔ㄦ€侀鑹插眰 */}
+      <div className="absolute inset-0 z-[-1] overflow-hidden bg-zinc-950">
+        {/* 动态颜色层 */}
         <div
           className={cn(
             "absolute inset-0 transition-opacity duration-1000 ease-in-out",
@@ -91,7 +91,7 @@ const BackgroundLayer = memo(
           style={dynamicStyle}
         />
 
-        {/* 灏侀潰閬僵灞?*/}
+        {/* 封面遮罩层 */}
         <div
           className={cn(
             "absolute inset-0 transition-opacity duration-1000",
@@ -110,7 +110,7 @@ const BackgroundLayer = memo(
           <div className="absolute inset-0 bg-linear-to-b from-black/10 via-zinc-950/20 to-black/60" />
         </div>
 
-        {/* 鍏滃簳鑳屾櫙灞?*/}
+        {/* 兜底背景层 */}
         <div
           className={cn(
             "absolute inset-0 transition-opacity duration-1000",
@@ -127,7 +127,7 @@ const BackgroundLayer = memo(
           />
         </div>
 
-        {/* 鍣偣灞?*/}
+        {/* 噪点层 */}
         <div className="absolute inset-0 opacity-[0.02] mix-blend-overlay pointer-events-none select-none bg-[url('data:image/svg+xml,...')]" />
       </div>
     );
@@ -145,13 +145,20 @@ export function FullScreenPlayer({
   onClose,
 }: FullScreenPlayerProps) {
   const isMounted = useMounted();
-  const [showLyrics, setShowLyrics] = useState(false);
-  const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
-  const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
-  const [qualityDrawerOpen, setQualityDrawerOpen] = useState(false);
-  const [speedDrawerOpen, setSpeedDrawerOpen] = useState(false);
-  const [sleepDrawerOpen, setSleepDrawerOpen] = useState(false);
-  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const {
+    showLyrics,
+    setShowLyrics,
+    moreDrawerOpen,
+    setMoreDrawerOpen,
+    isAddToPlaylistOpen,
+    setIsAddToPlaylistOpen,
+    qualityDrawerOpen,
+    setQualityDrawerOpen,
+    speedDrawerOpen,
+    setSpeedDrawerOpen,
+    sleepDrawerOpen,
+    setSleepDrawerOpen,
+  } = usePlayerUIState(isFullScreen);
 
   const {
     queue,
@@ -174,9 +181,6 @@ export function FullScreenPlayer({
     togglePlay,
     toggleRepeat,
     toggleShuffle,
-    isFavorite,
-    addToFavorites,
-    removeFromFavorites,
     coverUrl,
   } = useMusicStore(
     useShallow((state) => ({
@@ -200,94 +204,45 @@ export function FullScreenPlayer({
       togglePlay: state.togglePlay,
       toggleRepeat: state.toggleRepeat,
       toggleShuffle: state.toggleShuffle,
-      isFavorite: state.isFavorite,
-      addToFavorites: state.addToFavorites,
-      removeFromFavorites: state.removeFromFavorites,
       coverUrl: state.coverUrl,
-      favorites: state.favorites,
     }))
   );
 
   const currentTrack = queue[currentIndex] || null;
-  const isCurrentTrackFavorite = currentTrack
-    ? isFavorite(currentTrack.id)
-    : false;
 
-  const [colorInfo, setColorInfo] = useState<{
-    coverUrl: string | null;
-    hslColor: [number, number, number] | null;
-  }>({ coverUrl: null, hslColor: null });
+  const {
+    handleShare,
+    handleToggleLike,
+    isCurrentTrackFavorite,
+    trackInfoPressHandlers,
+  } = usePlayerActions(currentTrack, currentAudioUrl);
 
-  const hslColor = colorInfo.coverUrl === coverUrl ? colorInfo.hslColor : null;
+  const { swatches } = useCoverColors(
+    coverUrl && fullScreenBackgroundMode === "theme" ? coverUrl : null
+  );
 
-  useEffect(() => {
-    if (!isFullScreen) {
-      const timer = setTimeout(() => setShowLyrics(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [isFullScreen]);
+  const hslColor = useMemo(() => {
+    if (!swatches) return null;
+    const dominant = pickBestColor(swatches);
+    return dominant ? createBackgroundColor(dominant) : null;
+  }, [swatches]);
 
   const playTrack = (index: number) => setCurrentIndexAndPlay(index);
 
-  const handleDrawerOpenChange = useCallback((open: boolean) => {
-    setMoreDrawerOpen(open);
-  }, []);
-
   const handleClearQueue = () => {
-    clearQueue();
-    toast.success("播放列表已清空");
+    if (confirm("确定要清空播放列表吗？")) {
+      clearQueue();
+      toast.success("播放列表已清空");
+    }
   };
 
   const handleRemoveFromQueue = (track: MusicTrack) => {
     removeFromQueue(track.id);
   };
 
-  const handleShare = async () => {
-    if (!currentTrack) return toast.error("暂无歌曲信息");
-
-    const shareUrl = getCanonicalShareUrl(currentTrack) || currentAudioUrl;
-    if (!shareUrl) return toast.error("该音源暂不支持分享");
-
-    try {
-      await navigator.clipboard.writeText(
-        `【OtterMusic】${currentTrack.name} - ${currentTrack.artist.join(
-          ", "
-        )}\n${shareUrl}`
-      );
-      toast.success("已复制到剪贴板");
-    } catch {
-      toast.error("复制失败，请重试");
-    }
-  };
-
-  /**
-   * 闀挎寜澶嶅埗姝屾洸淇℃伅
-   */
-  const handleTrackInfoPressStart = () => {
-    if (!currentTrack) return;
-
-    pressTimerRef.current = setTimeout(() => {
-      const text = `${currentTrack.name} - ${currentTrack.artist.join(", ")}`;
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          toast.success("已复制歌曲信息");
-        })
-        .catch(() => {
-          toast.error("复制失败，请重试");
-        });
-    }, 500);
-  };
-
-  const handleTrackInfoPressEnd = () => {
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
-  };
-
   if (!isMounted) return null;
 
+  // 循环切换播放模式：none → repeat → shuffle → none
   const handleModeToggle = () => {
     if (!isShuffle && !isRepeat) toggleRepeat();
     else if (isRepeat) {
@@ -306,49 +261,21 @@ export function FullScreenPlayer({
     setCurrentIndexAndPlay((currentIndex + 1) % queue.length);
   };
 
-  const handleToggleLike = () => {
-    if (!currentTrack) return;
-    if (isFavorite(currentTrack.id)) {
-      removeFromFavorites(currentTrack.id);
-      toast.success("已取消喜欢");
-    } else {
-      const error = addToFavorites(currentTrack);
-      if (error) {
-        toastUtils.info(error);
-      } else {
-        toast.success("已喜欢");
-      }
-    }
-  };
-
   return createPortal(
     <div
       className={cn(
-        "fixed inset-0 z-50 isolate overflow-hidden bg-zinc-950 transition-transform duration-500 ease-in-out flex flex-col",
+        "fixed inset-0 z-50 transition-transform duration-500 ease-in-out flex flex-col",
         isFullScreen ? "translate-y-0" : "translate-y-full"
       )}
     >
-      {coverUrl && fullScreenBackgroundMode === "theme" && (
-        <div className="hidden">
-          <ColorExtractor
-            src={coverUrl}
-            maxColors={10}
-            getColors={(colors: string[]) =>
-              setColorInfo({ coverUrl, hslColor: pickBestColor(colors) })
-            }
-            onError={() => setColorInfo({ coverUrl, hslColor: null })}
-          />
-        </div>
-      )}
-
-      {/* 鑳屾櫙娓叉煋灞?*/}
+      {/* 背景渲染层 */}
       <BackgroundLayer
         hslColor={hslColor}
         coverUrl={coverUrl}
         mode={fullScreenBackgroundMode}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 pt-[calc(1rem+env(safe-area-inset-top))] pb-4 md:px-10 md:pb-2">
+      <header className="shrink-0 flex items-center justify-between px-6 pt-[calc(1rem+var(--safe-area-top))] pb-6 relative z-10">
         <Button
           variant="ghost"
           size="icon"
@@ -378,7 +305,7 @@ export function FullScreenPlayer({
       </header>
 
       <div
-        className="flex-1 flex flex-col items-center justify-center px-4 relative z-10 overflow-hidden cursor-pointer"
+        className="flex-1 flex flex-col items-center justify-center px-2 relative z-10 overflow-hidden cursor-pointer"
         onClick={() => {
           setShowLyrics(!showLyrics);
         }}
@@ -390,7 +317,7 @@ export function FullScreenPlayer({
         ) : (
           <div
             className={cn(
-              "relative aspect-square w-72 max-w-[320px] overflow-hidden rounded-3xl transition-transform duration-500 ring-1 ring-white/5 md:w-[min(36vh,420px)] md:max-w-[420px]",
+              "relative aspect-square w-72 max-w-[320px] overflow-hidden rounded-3xl transition-transform duration-500 ring-1 ring-white/5",
               isPlaying ? "scale-100" : "scale-[0.95]"
             )}
             style={{
@@ -412,22 +339,22 @@ export function FullScreenPlayer({
         )}
       </div>
 
-      <div className="relative z-10 mx-auto w-full max-w-6xl shrink-0 px-8 py-4 md:px-10">
+      <div className="shrink-0 px-8 py-4 relative z-10">
         <div className="flex items-center justify-between">
           <div
             className={cn("min-w-0 flex-1 cursor-pointer select-none")}
-            onMouseDown={handleTrackInfoPressStart}
-            onMouseUp={handleTrackInfoPressEnd}
-            onMouseLeave={handleTrackInfoPressEnd}
-            onTouchStart={handleTrackInfoPressStart}
-            onTouchEnd={handleTrackInfoPressEnd}
-            title="闀挎寜澶嶅埗姝屾洸淇℃伅"
+            onMouseDown={trackInfoPressHandlers.onMouseDown}
+            onMouseUp={trackInfoPressHandlers.onMouseUp}
+            onMouseLeave={trackInfoPressHandlers.onMouseLeave}
+            onTouchStart={trackInfoPressHandlers.onTouchStart}
+            onTouchEnd={trackInfoPressHandlers.onTouchEnd}
+            title="长按复制歌曲信息"
           >
             <h2 className="truncate text-xl font-semibold text-white">
-              {currentTrack?.name || "鏈煡姝屾洸"}
+              {currentTrack?.name || "未知歌曲"}
             </h2>
             <p className="truncate text-sm text-white/60 mt-1">
-              {currentTrack?.artist?.join(", ") || "鏈煡姝屾墜"}
+              {currentTrack?.artist?.join(", ") || "未知歌手"}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -452,7 +379,7 @@ export function FullScreenPlayer({
                 <MusicTrackMobileMenu
                   track={currentTrack}
                   open={moreDrawerOpen}
-                  onOpenChange={handleDrawerOpenChange}
+                  onOpenChange={setMoreDrawerOpen}
                   onAddToPlaylist={() => {
                     setIsAddToPlaylistOpen(true);
                   }}
@@ -479,7 +406,7 @@ export function FullScreenPlayer({
         </div>
       </div>
 
-      <div className="relative z-10 mx-auto w-full max-w-6xl shrink-0 px-8 md:px-10">
+      <div className="shrink-0 px-8 relative z-10">
         <PlayerProgressBar
           className="relative"
           leftTimeSuffix={
@@ -503,7 +430,7 @@ export function FullScreenPlayer({
         />
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-8 py-6 pb-[calc(2rem+env(safe-area-inset-bottom))] md:px-10">
+      <div className="shrink-0 flex items-center justify-between px-8 py-6 pb-[calc(2rem+var(--safe-area-bottom))] relative z-10">
         <Button
           variant="ghost"
           size="icon"
@@ -552,7 +479,6 @@ export function FullScreenPlayer({
           onReshuffle={reshuffle}
           onRemove={handleRemoveFromQueue}
           onPlayTrack={playTrackAsNext}
-          desktopPlacement="fullscreen"
           trigger={
             <Button
               variant="ghost"

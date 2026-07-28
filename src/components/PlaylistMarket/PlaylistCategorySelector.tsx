@@ -2,10 +2,12 @@ import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "@/components/ui/drawer";
 import { NETEASE_CATS } from "@/lib/netease/netease-cats";
 import { cn } from "@/lib/utils";
 import { LayoutGrid } from "lucide-react";
@@ -29,8 +31,8 @@ export function PlaylistCategorySelector({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <Drawer open={open} onOpenChange={setOpen}>
+      <DrawerTrigger asChild>
         {trigger || (
           <Button
             variant="ghost"
@@ -40,37 +42,35 @@ export function PlaylistCategorySelector({
             <LayoutGrid className="h-4 w-4 text-muted-foreground" />
           </Button>
         )}
-      </PopoverTrigger>
+      </DrawerTrigger>
 
-      <PopoverContent
-        align="end"
-        sideOffset={10}
-        className="w-[min(calc(100vw-2rem),720px)] overflow-hidden rounded-2xl border-border/70 p-0 shadow-xl"
-      >
-        <div className="border-b px-5 py-4">
-          <h3 className="text-base font-semibold tracking-tight">歌单分类</h3>
-        </div>
+      <DrawerContent className="max-h-[80vh]">
+        <DrawerHeader className="px-6 py-4">
+          <DrawerTitle className="text-lg font-semibold tracking-tight">
+            歌单分类
+          </DrawerTitle>
+        </DrawerHeader>
 
-        <ScrollArea className="max-h-[min(62vh,560px)] px-5 py-4">
-          <div className="space-y-5">
+        <ScrollArea className="px-6 pb-12 overflow-y-auto">
+          <div className="space-y-6">
             {NETEASE_CATS.map((group) => (
               <section key={group.category} className="space-y-3">
-                <h4 className="sticky top-0 z-10 bg-popover/95 py-1 text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60 backdrop-blur-sm">
+                <h4 className="sticky top-0 z-10 py-1 text-[11px] font-bold uppercase tracking-widest text-muted-foreground/60 bg-background/95 backdrop-blur-sm">
                   {group.category}
                 </h4>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-                  {group.filters.map((filter) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {group.filters.map((f) => (
                     <button
-                      key={filter.id}
-                      onClick={() => handleSelect(filter.id)}
+                      key={f.id}
+                      onClick={() => handleSelect(f.id)}
                       className={cn(
-                        "flex h-10 min-w-0 items-center justify-center rounded-lg border px-3 text-[13px] transition-all duration-200",
-                        activeCategory === filter.id
-                          ? "scale-[1.02] border-primary bg-primary font-medium text-primary-foreground shadow-lg shadow-primary/20"
-                          : "border-transparent bg-secondary/40 text-muted-foreground hover:bg-secondary hover:text-foreground active:scale-95"
+                        "h-10 px-1 rounded-lg text-[13px] transition-all duration-200 border flex items-center justify-center",
+                        activeCategory === f.id
+                          ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20 font-medium scale-[1.02]"
+                          : "bg-secondary/40 border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary active:scale-95"
                       )}
                     >
-                      <span className="truncate">{filter.name}</span>
+                      <span className="truncate">{f.name}</span>
                     </button>
                   ))}
                 </div>
@@ -78,7 +78,7 @@ export function PlaylistCategorySelector({
             ))}
           </div>
         </ScrollArea>
-      </PopoverContent>
-    </Popover>
+      </DrawerContent>
+    </Drawer>
   );
 }

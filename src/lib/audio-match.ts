@@ -5,7 +5,7 @@ import {
   getAggregatedSourcesForMatch,
 } from "@/hooks/use-aggregated-sources";
 import { musicApi } from "@/lib/music-api";
-import { sourceLabels, type MusicTrack } from "@/types/music";
+import { sourceLabels, type MusicSource, type MusicTrack } from "@/types/music";
 import {
   isNameMatch,
   isArtistMatch,
@@ -15,23 +15,9 @@ import {
 } from "./utils/music-key";
 import { logger } from "@/lib/logger";
 
-const AUTO_MATCH_TIMEOUT_MS = 12000;
-
-function buildPlaybackFallbackTrack(
-  original: MusicTrack,
-  match: MusicTrack
-): MusicTrack {
-  return {
-    ...match,
-    name: original.name,
-    artist: original.artist,
-    album: original.album || match.album,
-    pic_id: match.pic_id || original.pic_id,
-    artist_ids: original.artist_ids || match.artist_ids,
-    album_id: original.album_id || match.album_id,
-  };
-}
-
+/**
+ * 计算自动换源的单源内排序分数，优先保证歌名与歌手完全一致。
+ */
 function scoreAutoMatchCandidate(
   target: MusicTrack,
   candidate: MusicTrack,
@@ -45,20 +31,20 @@ function scoreAutoMatchCandidate(
   if (sameArtistSet) {
     score += 100;
   } else {
-    const targetArtists = new Set(normalizeArtists(target.artist));
-    const candidateArtists = new Set(normalizeArtists(candidate.artist));
-    for (const artist of targetArtists) {
-      if (candidateArtists.has(artist)) {
+    const tSet = new Set(normalizeArtists(target.artist));
+    const cSet = new Set(normalizeArtists(candidate.artist));
+    for (const a of tSet) {
+      if (cSet.has(a)) {
         score += 40;
         break;
       }
     }
   }
 
-  if (normalizeText(target.name) === normalizeText(candidate.name)) {
+  if (normalizeText(target.name) === normalizeText(candidate.name))
     score += 100;
-  }
 
+  // 全量匹配额外加分：简繁体转换后完全一致（保留括号等所有字符）
   if (convertT2SOnly(target.name) === convertT2SOnly(candidate.name)) {
     score += 50;
   }
@@ -68,34 +54,59 @@ function scoreAutoMatchCandidate(
   return score;
 }
 
-export async function handleAutoMatch(track: MusicTrack): Promise<boolean> {
+/**
+ * 自动匹配免费源逻辑
+ * @param track 需要匹配的歌曲
+ * @param targetSource 可选，指定目标音源（仅搜索该音源）
+ * @param pagePath 可选，当前页面路径（手动换源时传入，用于判断同步范围）
+ * @returns 是否匹配并切换成功
+ */
+export async function handleAutoMatch(
+  track: MusicTrack,
+  targetSource?: MusicSource,
+  pagePath?: string
+): Promise<boolean> {
   if (track.source && EXCLUDED_FOR_SEARCH.includes(track.source)) {
     return false;
   }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, AUTO_MATCH_TIMEOUT_MS);
   const toastId = toast.loading("正在搜索免费音源...", {
     id: `auto-match-${track.id}`,
   });
 
   try {
-    const { updateTrackInQueue } = useMusicStore.getState();
-    const aggregatedSources = getAggregatedSourcesForMatch().filter(
-      (source) => source !== track.source
-    );
+    const {
+      currentIndex,
+      autoMatchContext,
+      setAutoMatchContext,
+      updateTrackInQueue,
+      updateTrackInPlaylists,
+      contextId,
+      autoMatchFavorites,
+      autoMatchPlaylists,
+      isFavorite,
+      favorites,
+      setFavorites,
+    } = useMusicStore.getState();
+
+    // 手动指定目标音源时：只搜索该音源，不记录 tried
+    const isManual = !!targetSource;
+    const ctx =
+      currentIndex !== autoMatchContext?.index
+        ? { index: currentIndex, tried: new Set<MusicSource>() }
+        : autoMatchContext;
+
+    const aggregatedSources = isManual
+      ? [targetSource]
+      : getAggregatedSourcesForMatch().filter(
+          (source) => source !== track.source && !ctx.tried.has(source)
+        );
 
     if (aggregatedSources.length === 0) {
-      toast.dismiss(toastId);
       return false;
     }
-
     const match = await musicApi.searchBestMatch({
-      query: `${track.name} ${track.artist[0] || ""}`.trim(),
+      query: `${track.name} ${track.artist[0]}`,
       sources: aggregatedSources,
-      signal: controller.signal,
       predicate: (item: MusicTrack) => {
         if (!isNameMatch(track.name, item.name)) return false;
         return isArtistMatch(track.artist, item.artist);
@@ -110,26 +121,60 @@ export async function handleAutoMatch(track: MusicTrack): Promise<boolean> {
       return false;
     }
 
-    const finalTrack = buildPlaybackFallbackTrack(track, match);
-    updateTrackInQueue(track.id, finalTrack);
+    // 仅对 B 站音源保留原歌曲的 name 和 artist，避免标题杂乱与作者错位
+    const { bilibiliKeepOriginalMeta } = useMusicStore.getState();
+    const finalTrack: MusicTrack =
+      match.source === "bilibili" && bilibiliKeepOriginalMeta
+        ? { ...match, name: track.name, artist: track.artist }
+        : match;
 
-    const sourceLabel = sourceLabels[match.source] || match.source;
-    toast.success(`已自动切换至: ${sourceLabel}`, { id: toastId });
-    return true;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      logger.warn("audio-match", "Auto match timed out", {
-        trackId: track.id,
-        source: track.source,
-      });
-      toast.error("自动匹配超时", { id: toastId });
-      return false;
+    // 自动模式下记录已尝试的音源（手动指定时不记录，避免干扰后续自动换源）
+    if (!isManual) {
+      const nextTried = new Set(ctx.tried);
+      nextTried.add(track.source);
+      setAutoMatchContext({ index: currentIndex, tried: nextTried });
     }
 
+    updateTrackInQueue(track.id, finalTrack);
+
+    // 判断当前页面上下文（手动换源时基于页面路径，自动换源时基于 contextId）
+    const isOnFavoritesPage = pagePath === "/favorites";
+    const isOnPlaylistPage = pagePath?.startsWith("/playlist/") ?? false;
+    const playlistId = isOnPlaylistPage ? pagePath!.split("/")[2] : null;
+
+    // 手动换源：根据当前页面同步；自动换源：根据 contextId 和设置项同步
+    if (isManual) {
+      // 手动换源：仅同步当前页面
+      if (isOnPlaylistPage && playlistId) {
+        updateTrackInPlaylists(track.id, finalTrack, playlistId);
+      }
+      if (isOnFavoritesPage && isFavorite(track.id)) {
+        setFavorites(
+          favorites.map((t) => (t.id === track.id ? finalTrack : t))
+        );
+      }
+    } else {
+      // 自动换源：保持原有逻辑
+      if (autoMatchPlaylists && contextId?.startsWith("playlist-")) {
+        updateTrackInPlaylists(track.id, finalTrack);
+      }
+      if (
+        autoMatchFavorites &&
+        contextId === "favorites" &&
+        isFavorite(track.id)
+      ) {
+        setFavorites(
+          favorites.map((t) => (t.id === track.id ? finalTrack : t))
+        );
+      }
+    }
+
+    const sourceLabel = sourceLabels[match.source] || match.source;
+    toast.success(`已切换至: ${sourceLabel}`, { id: toastId });
+    return true;
+  } catch (error) {
     logger.error("audio-match", "Auto match failed", error);
     toast.error("自动匹配失败", { id: toastId });
     return false;
-  } finally {
-    clearTimeout(timeout);
   }
 }

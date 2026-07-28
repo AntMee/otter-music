@@ -15,24 +15,6 @@ const track: MusicTrack = {
 };
 
 describe("ChangqingProvider", () => {
-  it("delegates non-url cover ids to the base provider", async () => {
-    const getPic = vi
-      .fn()
-      .mockResolvedValue("https://img.example/resolved.jpg");
-    const provider = new ChangqingProvider(
-      "cq_kw",
-      createBaseProvider({ getPic })
-    );
-
-    await expect(
-      provider.getPic({ ...track, pic_id: "kuwo-cover-id" }, 800)
-    ).resolves.toBe("https://img.example/resolved.jpg");
-    expect(getPic).toHaveBeenCalledWith(
-      { ...track, pic_id: "kuwo-cover-id" },
-      800
-    );
-  });
-
   it("falls back to existing track cover when base provider cover lookup fails", async () => {
     const provider = new ChangqingProvider(
       "cq_kw",

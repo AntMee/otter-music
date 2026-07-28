@@ -8,6 +8,11 @@ import {
 
 export type FullScreenBackgroundMode = "theme" | "cover" | "texture";
 
+export interface AutoMatchContext {
+  index: number;
+  tried: Set<MusicSource>;
+}
+
 export interface UiSlice {
   quality: string;
   searchSource: MusicSource;
@@ -16,6 +21,10 @@ export interface UiSlice {
   lastMineTab: "recommend" | "created" | "subscribed" | "albums";
   lastFeaturedTab: string;
   enableAutoMatch: boolean;
+  autoMatchFavorites: boolean;
+  autoMatchPlaylists: boolean;
+  autoMatchContext: AutoMatchContext | null;
+  enableProxyFallback: boolean;
   bilibiliKeepOriginalMeta: boolean;
   bilibiliAutoMatchSuffix: string;
   fullScreenBackgroundMode: FullScreenBackgroundMode;
@@ -31,6 +40,10 @@ export interface UiSlice {
   ) => void;
   setLastFeaturedTab: (tab: string) => void;
   setEnableAutoMatch: (enable: boolean) => void;
+  setAutoMatchFavorites: (enable: boolean) => void;
+  setAutoMatchPlaylists: (enable: boolean) => void;
+  setAutoMatchContext: (ctx: AutoMatchContext | null) => void;
+  setEnableProxyFallback: (enable: boolean) => void;
   setBilibiliKeepOriginalMeta: (enable: boolean) => void;
   setBilibiliAutoMatchSuffix: (suffix: string) => void;
   setFullScreenBackgroundMode: (mode: FullScreenBackgroundMode) => void;
@@ -49,6 +62,10 @@ export const createUiSlice: StateCreator<MusicState, [], [], UiSlice> = (
   lastMineTab: "recommend",
   lastFeaturedTab: "",
   enableAutoMatch: true,
+  autoMatchFavorites: false,
+  autoMatchPlaylists: true,
+  autoMatchContext: null,
+  enableProxyFallback: true,
   bilibiliKeepOriginalMeta: false,
   bilibiliAutoMatchSuffix: "高音质 原曲",
   fullScreenBackgroundMode: "theme",
@@ -63,6 +80,10 @@ export const createUiSlice: StateCreator<MusicState, [], [], UiSlice> = (
   setLastMineTab: (lastMineTab) => set({ lastMineTab }),
   setLastFeaturedTab: (lastFeaturedTab) => set({ lastFeaturedTab }),
   setEnableAutoMatch: (enableAutoMatch) => set({ enableAutoMatch }),
+  setAutoMatchFavorites: (autoMatchFavorites) => set({ autoMatchFavorites }),
+  setAutoMatchPlaylists: (autoMatchPlaylists) => set({ autoMatchPlaylists }),
+  setAutoMatchContext: (autoMatchContext) => set({ autoMatchContext }),
+  setEnableProxyFallback: (enableProxyFallback) => set({ enableProxyFallback }),
   setBilibiliKeepOriginalMeta: (bilibiliKeepOriginalMeta) =>
     set({ bilibiliKeepOriginalMeta }),
   setBilibiliAutoMatchSuffix: (bilibiliAutoMatchSuffix) =>

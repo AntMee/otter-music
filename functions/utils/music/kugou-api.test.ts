@@ -6,10 +6,8 @@ const sharedMock = {
   buildKugouAndroidHeaders: vi.fn(() => ({})),
   buildKugouDeviceRegistrationPayload: vi.fn(),
   fetchKugouGlobalPlaylistPages: vi.fn(),
-  fetchKugouCodePlaylistDetail: vi.fn(),
   fetchKugouPlaylistPages: vi.fn(),
   isKugouGlobalCollectionId: vi.fn(),
-  isKugouCodeInput: vi.fn(),
   KUGOU_ANDROID_SIGN_KEY: "sign-key",
   KUGOU_RSA_PUBLIC_KEY: "public-key",
   md5Hex: vi.fn(),
@@ -25,7 +23,6 @@ const sharedMock = {
 describe("server Kugou API", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.resetAllMocks();
     vi.resetModules();
     vi.doUnmock("@otter-music/shared");
   });
@@ -85,41 +82,6 @@ describe("server Kugou API", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://userservice.kugou.com/risk/v2/r_register_dev",
       expect.objectContaining({ method: "POST" })
-    );
-  });
-
-  it("uses the Kugou code import chain for numeric codes", async () => {
-    vi.doMock("@otter-music/shared", () => sharedMock);
-    sharedMock.isKugouCodeInput.mockReturnValue(true);
-    sharedMock.fetchKugouCodePlaylistDetail.mockResolvedValue({
-      name: "青听",
-      coverUrl: "",
-      trackCount: 1,
-      songs: [],
-    });
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ ok: true })));
-
-    const { fetchKugouPlaylistDetail } = await import("./kugou-api");
-    await expect(fetchKugouPlaylistDetail("37619861")).resolves.toMatchObject({
-      name: "青听",
-    });
-
-    expect(sharedMock.fetchKugouCodePlaylistDetail).toHaveBeenCalledWith(
-      "37619861",
-      expect.any(Function)
-    );
-    await sharedMock.fetchKugouCodePlaylistDetail.mock.calls[0][1](
-      "http://example.test",
-      { data: "37619861" }
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://example.test",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ data: "37619861" }),
-      })
     );
   });
 });

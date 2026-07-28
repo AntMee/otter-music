@@ -7,6 +7,37 @@ import {
 
 export const kugouRoutes = new Hono<{ Bindings: Env }>();
 
+const KUGOU_CODE_UPSTREAMS = {
+  "code-command": "http://t.kugou.com/command/",
+  "code-playlist": "http://www2.kugou.kugou.com/apps/kucodeAndShare/app/",
+} as const;
+
+async function proxyKugouCodeRequest(
+  body: unknown,
+  target: (typeof KUGOU_CODE_UPSTREAMS)[keyof typeof KUGOU_CODE_UPSTREAMS]
+) {
+  return fetch(target, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+for (const [route, target] of Object.entries(KUGOU_CODE_UPSTREAMS)) {
+  kugouRoutes.post(`/${route}`, async (c) => {
+    try {
+      const upstream = await proxyKugouCodeRequest(await c.req.json(), target);
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error(`Kugou ${route} proxy error:`, error);
+      return c.json({ error: "Kugou code proxy failed" }, 502);
+    }
+  });
+}
+
 /**
  * 解析酷狗分享短链。
  */

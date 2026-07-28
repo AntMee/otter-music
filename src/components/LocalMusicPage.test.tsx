@@ -23,11 +23,22 @@ vi.mock("@/hooks/use-offline-playlist", () => ({
   useOfflinePlaylist: vi.fn(() => []),
 }));
 
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 vi.mock("@/plugins/local-music", () => ({
   LocalMusicPlugin: {
     scanLocalMusic: vi.fn(),
     scanAllStorage: vi.fn(),
     deleteLocalMusic: vi.fn(),
+    getExcludedFolders: vi.fn(),
+    removeExcludedFolder: vi.fn(),
+    pickExcludedDirectory: vi.fn(),
+    pickDownloadDirectory: vi.fn(),
   },
 }));
 
@@ -36,6 +47,26 @@ vi.mock("react-hot-toast", () => ({
     promise: vi.fn((promise) => promise),
     error: vi.fn(),
   },
+}));
+
+vi.mock("@/components/ui/drawer", () => ({
+  Drawer: ({
+    open,
+    children,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    children: React.ReactNode;
+  }) => (open ? <div data-testid="drawer">{children}</div> : null),
+  DrawerContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="drawer-content">{children}</div>
+  ),
+  DrawerHeader: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DrawerTitle: ({ children }: { children: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
 }));
 
 vi.mock("@/components/PageLayout", () => ({
@@ -138,6 +169,8 @@ describe("LocalMusicPage", () => {
       ],
       isScanning: false,
       scanType: null,
+      scanDirectory: "",
+      minScanFileSizeMb: 1,
     });
     vi.mocked(LocalMusicPlugin.scanLocalMusic).mockResolvedValue({
       success: true,
@@ -148,6 +181,17 @@ describe("LocalMusicPage", () => {
       files: [],
     });
     vi.mocked(LocalMusicPlugin.deleteLocalMusic).mockResolvedValue({
+      success: true,
+    });
+    vi.mocked(LocalMusicPlugin.getExcludedFolders).mockResolvedValue({
+      success: true,
+      folders: [],
+    });
+    vi.mocked(LocalMusicPlugin.pickExcludedDirectory).mockResolvedValue({
+      success: false,
+      error: "cancelled",
+    });
+    vi.mocked(LocalMusicPlugin.removeExcludedFolder).mockResolvedValue({
       success: true,
     });
   });
@@ -188,10 +232,13 @@ describe("LocalMusicPage", () => {
     });
   }
 
-  function clickButtonByText(text: string) {
-    Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
-      .find((button) => button.textContent?.includes(text))
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  /** 点击"全盘扫描"按钮打开 Drawer。 */
+  function openScanDrawer() {
+    const btn = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>("button") ?? []
+    ).find((button) => button.textContent?.includes("全盘扫描"));
+    if (!btn) throw new Error("全盘扫描 button not found");
+    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 
   it("orders local tracks by modified time descending and keeps play queue in the same order", () => {
@@ -223,29 +270,53 @@ describe("LocalMusicPage", () => {
     expect(LocalMusicPlugin.scanAllStorage).not.toHaveBeenCalled();
   });
 
-  it("uses all storage scan only when the user clicks full scan", async () => {
+  it("opens scan drawer when header button is clicked; does not scan yet", async () => {
     renderPage();
 
     await act(async () => {
+      openScanDrawer();
+    });
+    await flushReact();
+
+    // Drawer 打开后不应直接触发扫描
+    expect(LocalMusicPlugin.scanAllStorage).not.toHaveBeenCalled();
+    // Drawer 内应展示确认按钮
+    expect(
+      container?.querySelector<HTMLButtonElement>(
+        "[data-testid='confirm-full-scan']"
+      )
+    ).toBeTruthy();
+  });
+
+  it("triggers full scan only when confirming inside the drawer", async () => {
+    renderPage();
+
+    await act(async () => {
+      openScanDrawer();
+    });
+    await flushReact();
+
+    await act(async () => {
       container
-        ?.querySelector<HTMLButtonElement>("button")
+        ?.querySelector<HTMLButtonElement>("[data-testid='confirm-full-scan']")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(LocalMusicPlugin.scanAllStorage).toHaveBeenCalledTimes(1);
   });
 
-  it("passes local scan directory and minimum file size to full scan", async () => {
+  it("passes the selected directory and minimum size to a confirmed full scan", async () => {
     useLocalMusicStore.setState({
       scanDirectory: "/Music",
       minScanFileSizeMb: 5,
-    } as Partial<ReturnType<typeof useLocalMusicStore.getState>>);
-
+    });
     renderPage();
 
+    await act(async () => openScanDrawer());
+    await flushReact();
     await act(async () => {
       container
-        ?.querySelector<HTMLButtonElement>("button")
+        ?.querySelector<HTMLButtonElement>("[data-testid='confirm-full-scan']")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
@@ -255,96 +326,13 @@ describe("LocalMusicPage", () => {
     });
   });
 
-  it("filters full scan results below the minimum file size before rendering", async () => {
-    useLocalMusicStore.setState({
-      files: [
-        {
-          id: "cached",
-          name: "Cached Song",
-          artist: "Artist",
-          album: "Album",
-          duration: 1000,
-          localPath: "/music/cached.mp3",
-          fileSize: 4 * 1024 * 1024,
-          modifiedTime: 1000,
-        },
-      ],
-      minScanFileSizeMb: 3,
-    } as Partial<ReturnType<typeof useLocalMusicStore.getState>>);
-    vi.mocked(LocalMusicPlugin.scanAllStorage).mockResolvedValue({
-      success: true,
-      files: [
-        {
-          id: "small",
-          name: "Small Recording",
-          artist: "Unknown",
-          album: "Album",
-          duration: 1000,
-          localPath: "/music/small.mp3",
-          fileSize: 2 * 1024 * 1024,
-          modifiedTime: 3000,
-        },
-        {
-          id: "large",
-          name: "Large Song",
-          artist: "Artist",
-          album: "Album",
-          duration: 1000,
-          localPath: "/music/large.mp3",
-          fileSize: 4 * 1024 * 1024,
-          modifiedTime: 4000,
-        },
-      ],
-    });
-
-    renderPage();
-
-    await act(async () => {
-      container
-        ?.querySelector<HTMLButtonElement>("button")
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(
-      useLocalMusicStore.getState().files.map((file) => file.name)
-    ).toEqual(["Large Song"]);
-  });
-
-  it("normalizes the minimum file size input without leading zeroes", () => {
-    renderPage();
-
-    const input = container?.querySelector<HTMLInputElement>(
-      "input[aria-label='最小扫描文件大小']"
-    );
-
-    expect(input).toBeDefined();
-
-    act(() => {
-      input!.value = "03";
-      input!.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    expect(useLocalMusicStore.getState().minScanFileSizeMb).toBe(3);
-    expect(input?.value).toBe("3");
-  });
-
-  it("keeps the local music page scrollable after scan results are rendered", () => {
-    renderPage();
-
-    const scrollRegion = container?.querySelector(
-      "[data-testid='local-music-scroll-region']"
-    );
-
-    expect(scrollRegion).toBeDefined();
-    expect(scrollRegion?.className).toContain("overflow-y-auto");
-    expect(scrollRegion?.className).not.toContain("overflow-hidden");
-  });
-
   it("removes local track from the current list without deleting the file by default", async () => {
     renderPage();
 
     await act(async () => {
-      clickButtonByText("delete New Song");
+      container
+        ?.querySelector<HTMLButtonElement>("button:nth-of-type(2)")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     await act(async () => {
@@ -365,23 +353,123 @@ describe("LocalMusicPage", () => {
     renderPage();
 
     await act(async () => {
-      clickButtonByText("delete New Song");
+      container
+        ?.querySelector<HTMLButtonElement>("button:nth-of-type(2)")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {
       document
-        .querySelector<HTMLButtonElement>("[data-testid='delete-local-file']")
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        .querySelector<HTMLButtonElement>("[data-testid='delete-local-file']")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {
       document
         .querySelector<HTMLButtonElement>(
           "[data-testid='confirm-local-delete']"
-        )
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        )!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(LocalMusicPlugin.deleteLocalMusic).toHaveBeenCalledWith({
       localPath: "/music/new.mp3",
     });
+  });
+
+  /* =========================
+     排除目录
+  ========================= */
+
+  it("loads excluded folders when drawer opens", async () => {
+    vi.mocked(LocalMusicPlugin.getExcludedFolders).mockResolvedValue({
+      success: true,
+      folders: ["Recordings/Call", "通话录音"],
+    });
+
+    renderPage();
+    await flushReact();
+
+    expect(LocalMusicPlugin.getExcludedFolders).not.toHaveBeenCalled();
+
+    await act(async () => {
+      openScanDrawer();
+    });
+    await flushReact();
+
+    expect(LocalMusicPlugin.getExcludedFolders).toHaveBeenCalledTimes(1);
+    // Drawer 打开后,排除目录列表应展示已加载的目录
+    const list = container?.querySelector<HTMLDivElement>(
+      "[data-testid='excluded-folder-list']"
+    );
+    expect(list?.textContent).toContain("Recordings/Call");
+    expect(list?.textContent).toContain("通话录音");
+  });
+
+  it("calls pickExcludedDirectory and reloads list on success", async () => {
+    vi.mocked(LocalMusicPlugin.getExcludedFolders)
+      .mockResolvedValueOnce({ success: true, folders: [] })
+      .mockResolvedValueOnce({ success: true, folders: ["MIUI/Recorder"] });
+    vi.mocked(LocalMusicPlugin.pickExcludedDirectory).mockResolvedValue({
+      success: true,
+      path: "MIUI/Recorder",
+      uri: "content://tree/abc",
+    });
+
+    renderPage();
+    await flushReact();
+
+    await act(async () => {
+      openScanDrawer();
+    });
+    await flushReact();
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>(
+          "[data-testid='excluded-folder-pick']"
+        )
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(LocalMusicPlugin.pickExcludedDirectory).toHaveBeenCalledTimes(1);
+    // 成功后应重新拉取
+    expect(LocalMusicPlugin.getExcludedFolders).toHaveBeenCalledTimes(2);
+    const list = container?.querySelector<HTMLDivElement>(
+      "[data-testid='excluded-folder-list']"
+    );
+    expect(list?.textContent).toContain("MIUI/Recorder");
+  });
+
+  it("removes an excluded folder and updates the list", async () => {
+    vi.mocked(LocalMusicPlugin.getExcludedFolders).mockResolvedValue({
+      success: true,
+      folders: ["A/C", "B/D"],
+    });
+
+    renderPage();
+    await flushReact();
+
+    await act(async () => {
+      openScanDrawer();
+    });
+    await flushReact();
+
+    await act(async () => {
+      const removeBtns = container?.querySelectorAll<HTMLButtonElement>(
+        "[data-testid='excluded-folder-remove']"
+      );
+      removeBtns?.[0]?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+    });
+
+    expect(LocalMusicPlugin.removeExcludedFolder).toHaveBeenCalledWith({
+      folder: "A/C",
+    });
+    const list = container?.querySelector<HTMLDivElement>(
+      "[data-testid='excluded-folder-list']"
+    );
+    expect(list?.textContent).toContain("B/D");
+    expect(list?.textContent).not.toContain("A/C");
   });
 });
