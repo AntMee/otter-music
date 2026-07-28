@@ -13,10 +13,14 @@ import {
 } from "@/components/ui/drawer";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingItem } from "./SettingItem";
-import { writeClipboardText } from "@/lib/clipboard";
 import { logger } from "@/lib/logger";
 import { toastUtils } from "@/lib/utils/toast";
 import { GithubUrl } from "@/types";
+
+async function copyToClipboard(text: string) {
+  if (!text.trim()) throw new Error("EMPTY");
+  await navigator.clipboard.writeText(text);
+}
 
 export function IssueLogs() {
   const [isOpen, setIsOpen] = useState(false);
@@ -41,18 +45,18 @@ export function IssueLogs() {
   };
 
   const handleAction = async (action: "copy-recent" | "copy-all" | "clear") => {
-    if (action === "clear") {
-      logger.clear();
-      setLogs({ count: 0, all: "", recent: "" });
-      toastUtils.success("日志已清空");
-      return;
-    }
+    try {
+      if (action === "clear") {
+        logger.clear();
+        setLogs({ count: 0, all: "", recent: "" });
+        toastUtils.success("日志已清空");
+        return;
+      }
 
-    const isRecent = action === "copy-recent";
-    const ok = await writeClipboardText(isRecent ? logs.recent : logs.all);
-    if (ok) {
+      const isRecent = action === "copy-recent";
+      await copyToClipboard(isRecent ? logs.recent : logs.all);
       toastUtils.success(`${isRecent ? "本次" : "全部"}日志已复制`);
-    } else {
+    } catch {
       toastUtils.error("操作失败或无内容");
     }
   };

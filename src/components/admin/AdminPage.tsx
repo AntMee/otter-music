@@ -29,7 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { writeClipboardText } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
 import {
   adminLogin,
@@ -153,7 +152,7 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    await writeClipboardText(text);
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

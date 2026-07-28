@@ -53,7 +53,7 @@ export class ChangqingProvider implements IMusicProvider {
   }
 
   async getPic(track: MusicTrack, size?: number): Promise<string | null> {
-    if (track.pic_id) return track.pic_id;
+    if (/^https?:\/\//i.test(track.pic_id)) return track.pic_id;
     try {
       return await this.baseProvider.getPic(track, size);
     } catch {

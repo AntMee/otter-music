@@ -41,15 +41,19 @@ export function QueuePage({
         )
       }
     >
-      <MusicPlaylistView
-        title="播放列表"
-        tracks={queue}
-        icon={<ListVideo className="h-8 w-8 text-primary/80" />}
-        onPlay={onPlay}
-        onRemove={onRemove}
-        currentTrackId={currentTrackId}
-        isPlaying={isPlaying}
-      />
+      <div className="flex-1 min-h-0 overflow-hidden bg-background md:bg-muted/25 md:p-6 lg:p-8">
+        <div className="mx-auto flex h-full max-w-7xl overflow-hidden bg-background md:rounded-2xl md:border md:shadow-sm">
+          <MusicPlaylistView
+            title="播放列表"
+            tracks={queue}
+            icon={<ListVideo className="h-8 w-8 text-primary/80" />}
+            onPlay={onPlay}
+            onRemove={onRemove}
+            currentTrackId={currentTrackId}
+            isPlaying={isPlaying}
+          />
+        </div>
+      </div>
     </PageLayout>
   );
 }

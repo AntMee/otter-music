@@ -1,18 +1,16 @@
 import { useState } from "react";
-import { SettingItem } from "./SettingItem";
-import { Download, ExternalLink, Milestone, RefreshCw } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { format } from "date-fns";
+import { Milestone, RefreshCw } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
-import { Footer } from "@/components/footer";
-import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { format } from "date-fns";
-import { openUrl } from "@/lib/utils";
+import { useAppStore } from "@/store/app-store";
+import { SettingItem } from "./SettingItem";
 
 interface UpdateDialogProps {
   open: boolean;
@@ -23,26 +21,19 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
   const {
     currentVersion,
     latestVersionInfo,
-    hasUpdate,
     isChecking,
     checkUpdate,
     lastCheckTime,
   } = useAppStore();
 
   const neverChecked = lastCheckTime === 0;
+  const hasUpdate = Boolean(latestVersionInfo);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="max-h-[85vh]">
         <DrawerHeader className="items-center pt-4">
-          <img
-            src="/favicon.svg"
-            alt="Otter Music"
-            className="w-16 h-16 rounded-xl shadow"
-          />
-          <DrawerTitle className="text-xl font-bold mt-2">
-            Otter Music
-          </DrawerTitle>
+          <DrawerTitle className="text-xl font-bold mt-2">版本更新</DrawerTitle>
           <div className="text-xs font-mono text-muted-foreground">
             {currentVersion}
           </div>
@@ -52,10 +43,11 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
           <div className="border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">版本更新</span>
-              {/* Badge 支持点击检查更新，带 Icon 和 Loading 动画 */}
               <Badge
                 variant={hasUpdate ? "default" : "secondary"}
-                className={`gap-1 cursor-pointer select-none ${isChecking ? "opacity-70" : ""}`}
+                className={`gap-1 cursor-pointer select-none ${
+                  isChecking ? "opacity-70" : ""
+                }`}
                 onClick={() => !isChecking && checkUpdate(false)}
               >
                 <RefreshCw
@@ -71,7 +63,6 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
               </Badge>
             </div>
 
-            {/* 不管是否为最新版本，只要有数据就显示更新日志 */}
             {latestVersionInfo && (
               <div className="text-xs text-muted-foreground space-y-1">
                 <div className="flex justify-between">
@@ -91,30 +82,7 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
                 </div>
               </div>
             )}
-
-            {/* 仅在有新版本更新时才显示下载按钮 */}
-            {latestVersionInfo && (
-              <>
-                <Button
-                  className="w-full"
-                  onClick={() => openUrl(latestVersionInfo.downloadUrl)}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  国内加速下载
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => openUrl(latestVersionInfo.directUrl)}
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />从 GitHub 下载
-                </Button>
-              </>
-            )}
           </div>
-
-          <Footer />
         </div>
       </DrawerContent>
     </Drawer>
@@ -123,7 +91,8 @@ export function UpdateDialog({ open, onOpenChange }: UpdateDialogProps) {
 
 export function UpdateCheck() {
   const [showDialog, setShowDialog] = useState(false);
-  const { currentVersion, hasUpdate } = useAppStore();
+  const { currentVersion, latestVersionInfo } = useAppStore();
+  const hasUpdate = Boolean(latestVersionInfo);
 
   return (
     <>

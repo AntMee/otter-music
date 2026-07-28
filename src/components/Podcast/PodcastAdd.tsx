@@ -135,7 +135,7 @@ export function PodcastAdd({ open, onOpenChange }: PodcastAddProps) {
         if (!val) resetDialogState();
       }}
     >
-      <DrawerContent className="max-h-[90vh] overflow-hidden">
+      <DrawerContent className="max-h-[90vh]">
         <DrawerHeader className="mb-1 px-4">
           <DrawerTitle className="text-center text-lg">
             添加播客订阅
@@ -145,7 +145,7 @@ export function PodcastAdd({ open, onOpenChange }: PodcastAddProps) {
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="flex-1 min-h-0 space-y-4 overflow-y-auto px-4 pb-5">
+        <div className="space-y-4 overflow-y-auto px-4 pb-5">
           {mode === "search" ? (
             <div className="space-y-3">
               <div className="flex gap-2">
@@ -172,7 +172,7 @@ export function PodcastAdd({ open, onOpenChange }: PodcastAddProps) {
                   )}
                 </Button>
               </div>
-              <div className="space-y-2 pr-1 custom-scrollbar">
+              <div className="max-h-[260px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                 {searchItems.map((item) => {
                   const existed =
                     !item.rssUrl ||

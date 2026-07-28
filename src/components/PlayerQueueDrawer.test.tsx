@@ -37,10 +37,15 @@ describe("PlayerQueueDrawer", () => {
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 375,
+    });
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
-        matches: false,
+        matches: query.includes("max-width") ? window.innerWidth < 768 : false,
         media: query,
         onchange: null,
         addListener: vi.fn(),
@@ -130,5 +135,20 @@ describe("PlayerQueueDrawer", () => {
 
     expect(props.onRemove).toHaveBeenCalledWith(tracks[0]);
     expect(props.onPlay).not.toHaveBeenCalled();
+  });
+
+  it("opens as a lightweight popover without a drawer overlay on desktop", () => {
+    window.innerWidth = 1024;
+    renderDrawer();
+
+    click(document.querySelector("button")!);
+
+    expect(document.body.textContent).toContain("First");
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]')
+    ).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-slot="drawer-overlay"]')
+    ).toBeNull();
   });
 });

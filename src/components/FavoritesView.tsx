@@ -92,11 +92,11 @@ export function FavoritesView({
       <div
         className={cn("p-4 border-b flex items-end gap-4 bg-muted/10 relative")}
       >
-        <div className="h-20 w-20 bg-primary/10 rounded-lg flex items-center justify-center shadow-sm border overflow-hidden shrink-0 flex-[0_0_80px] min-w-20 min-h-20">
+        <div className="h-20 w-20 bg-primary rounded-lg flex items-center justify-center shadow-sm border border-primary/30 overflow-hidden shrink-0 flex-[0_0_80px] min-w-20 min-h-20">
           <div className="h-8 w-8 shrink-0 flex-[0_0_32px] min-w-8 min-h-8">
             <Heart
               size={32}
-              className="h-full w-full text-primary/80 fill-current"
+              className="h-full w-full text-primary-foreground fill-current"
             />
           </div>
         </div>

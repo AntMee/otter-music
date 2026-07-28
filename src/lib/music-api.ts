@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 
 const TTL_SHORT = 60 * 60 * 1000; // 60 minutes
 const TTL_LONG = 7 * 24 * 60 * 60 * 1000; // 7 days
+const COVER_CACHE_VERSION = 2;
 
 export const musicApi = {
   /* ---------------- 搜索 ---------------- */
@@ -155,7 +156,7 @@ export const musicApi = {
     size: number = 800
   ): Promise<string | null> {
     if (idOrUrl.startsWith("http") && source !== "bilibili") return idOrUrl;
-    const key = `pic:${source}:${idOrUrl}:${size}`;
+    const key = `pic:v${COVER_CACHE_VERSION}:${source}:${idOrUrl}:${size}`;
     return cachedFetch<string | null>(
       key,
       async () => {

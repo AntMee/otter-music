@@ -113,6 +113,26 @@ describe("musicApi local metadata", () => {
     );
   });
 
+  it("does not reuse legacy longqing cover cache entries", async () => {
+    const getPic = vi
+      .fn()
+      .mockResolvedValue("https://img.example/resolved.jpg");
+    vi.mocked(MusicProviderFactory.getProvider).mockReturnValue({
+      source: "cq_kw",
+      search: vi.fn(),
+      getUrl: vi.fn(),
+      getPic,
+      getLyric: vi.fn(),
+    });
+    vi.mocked(cachedFetch).mockImplementation(async (key, fetcher) =>
+      key === "pic:cq_kw:kuwo-cover-id:800" ? "kuwo-cover-id" : fetcher()
+    );
+
+    await expect(musicApi.getPic("kuwo-cover-id", "cq_kw")).resolves.toBe(
+      "https://img.example/resolved.jpg"
+    );
+  });
+
   it("loads local lyrics from the local provider via cachedFetch", async () => {
     const getLyric = vi
       .fn()

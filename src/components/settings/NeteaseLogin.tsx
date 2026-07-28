@@ -1,14 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import {
-  User,
-  RefreshCw,
-  Check,
-  Loader2,
-  ScanLine,
-  Info,
-  Copy,
-  LogOut,
-} from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { User, RefreshCw, Check, Loader2, ScanLine, Info } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -25,7 +16,6 @@ import type { UserProfile } from "@/lib/netease/netease-types";
 import toast from "react-hot-toast";
 import { QRCodeSVG } from "qrcode.react";
 import { useNeteaseStore } from "@/store/netease-store";
-import { writeClipboardText } from "@/lib/clipboard";
 
 const STATUS_MESSAGES = {
   loading: "正在获取二维码...",
@@ -39,9 +29,8 @@ type QrStatus = keyof typeof STATUS_MESSAGES;
 type LoginMode = "qr" | "cookie";
 
 export function NeteaseLogin() {
-  const { user, cookie, setLogin, logout } = useNeteaseStore();
-  const [showLoginDialog, setShowLoginDialog] = useState(false);
-  const [showUserDrawer, setShowUserDrawer] = useState(false); // 新增：控制用户操作面板
+  const { user, setLogin, logout } = useNeteaseStore();
+  const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState<LoginMode>("qr");
   const [cookieInput, setCookieInput] = useState("");
@@ -70,7 +59,7 @@ export function NeteaseLogin() {
   const onLoginSuccess = useCallback(
     (cookie: string, profile: UserProfile) => {
       setLogin(cookie, profile);
-      setShowLoginDialog(false);
+      setShowDialog(false);
       resetDialogState();
     },
     [resetDialogState, setLogin]
@@ -86,11 +75,13 @@ export function NeteaseLogin() {
   const pollStatus = useCallback(
     async (key: string) => {
       if (!pollingRef.current) return;
+
       try {
         const res = await checkQrStatus(key);
         if (!pollingRef.current) return;
 
         const { code, cookie, message } = res;
+
         switch (code) {
           case 800:
           case 8821:
@@ -98,29 +89,36 @@ export function NeteaseLogin() {
             clearTimer();
             if (code === 8821) toast.error(message || "登录环境异常");
             return;
+
           case 801:
             setQrStatus("waiting");
             scheduleNextPoll(key);
             return;
+
           case 802:
             setQrStatus("scanned");
             scheduleNextPoll(key);
             return;
-          case 803: {
+
+          case 803:
             setQrStatus("success");
             clearTimer();
+
             if (!cookie) {
               toast.error("未获取到登录凭证");
               return;
             }
-            const profile = await getMyInfo(cookie);
-            if (!profile) {
-              toast.error("获取用户信息失败");
-              return;
+
+            {
+              const profile = await getMyInfo(cookie);
+              if (!profile) {
+                toast.error("获取用户信息失败");
+                return;
+              }
+              onLoginSuccess(cookie, profile);
             }
-            onLoginSuccess(cookie, profile);
             return;
-          }
+
           default:
             scheduleNextPoll(key);
         }
@@ -131,7 +129,9 @@ export function NeteaseLogin() {
     [clearTimer, onLoginSuccess, scheduleNextPoll]
   );
 
-  const fetchQrCode = useCallback(async () => {
+  const startLogin = useCallback(async () => {
+    setShowDialog(true);
+    setLoginMode("qr");
     setLoading(true);
     setQrStatus("loading");
     setQrUrl("");
@@ -144,26 +144,12 @@ export function NeteaseLogin() {
       pollingRef.current = true;
       void pollStatus(key);
     } catch {
-      setQrStatus("expired");
       toast.error("获取二维码失败");
+      setShowDialog(false);
     } finally {
       setLoading(false);
     }
   }, [clearTimer, pollStatus]);
-
-  useEffect(() => {
-    if (showLoginDialog && loginMode === "qr") {
-      void fetchQrCode();
-    } else if (!showLoginDialog || loginMode === "cookie") {
-      clearTimer();
-    }
-  }, [showLoginDialog, loginMode, fetchQrCode, clearTimer]);
-
-  const startLogin = useCallback(() => {
-    resetDialogState();
-    setLoginMode("qr");
-    setShowLoginDialog(true);
-  }, [resetDialogState]);
 
   const handleCookieLogin = async () => {
     const raw = cookieInput.trim();
@@ -178,6 +164,7 @@ export function NeteaseLogin() {
         toast.error("Cookie 无效或已过期");
         return;
       }
+
       onLoginSuccess(finalCookie, profile);
     } catch {
       toast.error("验证失败，请检查 Cookie");
@@ -188,30 +175,11 @@ export function NeteaseLogin() {
 
   const handleLogout = () => {
     if (!window.confirm("确定要退出网易云登录吗？")) return;
+
     logout();
-    setShowUserDrawer(false);
+    // localStorage.removeItem(NETEASE_COOKIE_KEY);
+    // localStorage.removeItem("cookie:netease");
     toast.success("已退出登录");
-  };
-
-  const handleCopyCookie = useCallback(async () => {
-    const ok = await writeClipboardText(cookie);
-    if (ok) {
-      toast.success("已复制 Cookie");
-      setShowUserDrawer(false);
-    } else {
-      toast.error("复制失败");
-    }
-  }, [cookie]);
-
-  const toggleLoginMode = () => {
-    setLoginMode((prev) => {
-      if (prev === "qr") {
-        clearTimer();
-        return "cookie";
-      } else {
-        return "qr";
-      }
-    });
   };
 
   return (
@@ -224,7 +192,7 @@ export function NeteaseLogin() {
           user ? (
             <Avatar
               className="h-10 w-10 cursor-pointer transition-opacity hover:opacity-80"
-              onClick={() => setShowUserDrawer(true)}
+              onClick={handleLogout}
             >
               <AvatarImage src={user.avatarUrl} />
               <AvatarFallback>{user.nickname?.[0]}</AvatarFallback>
@@ -234,23 +202,20 @@ export function NeteaseLogin() {
               variant="outline"
               size="sm"
               onClick={startLogin}
-              disabled={loading && loginMode === "qr"}
+              disabled={loading}
               className="px-4"
             >
-              {loading && loginMode === "qr" && (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              )}
+              {loading && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
               登录
             </Button>
           )
         }
       />
 
-      {/* 登录弹窗 */}
       <Drawer
-        open={showLoginDialog}
+        open={showDialog}
         onOpenChange={(open) => {
-          setShowLoginDialog(open);
+          setShowDialog(open);
           if (!open) resetDialogState();
         }}
       >
@@ -304,7 +269,7 @@ export function NeteaseLogin() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={fetchQrCode}
+                        onClick={startLogin}
                         className="h-8 rounded-full px-4 text-xs"
                       >
                         <RefreshCw className="mr-1.5 h-3 w-3" />
@@ -364,13 +329,9 @@ export function NeteaseLogin() {
                 <Button
                   className="w-full rounded-full"
                   onClick={handleCookieLogin}
-                  disabled={
-                    (loading && loginMode === "cookie") || !cookieInput.trim()
-                  }
+                  disabled={loading || !cookieInput.trim()}
                 >
-                  {loading && loginMode === "cookie" && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   验证并登录
                 </Button>
               </div>
@@ -379,37 +340,11 @@ export function NeteaseLogin() {
             <Button
               variant="link"
               className="h-auto px-0 text-xs text-muted-foreground/70 hover:text-muted-foreground"
-              onClick={toggleLoginMode}
+              onClick={() =>
+                setLoginMode((prev) => (prev === "qr" ? "cookie" : "qr"))
+              }
             >
-              {loginMode === "qr" ? "通过 Cookie 登录" : "返回扫码登录"}
-            </Button>
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      {/* 登录后点击头像的用户操作面板 */}
-      <Drawer open={showUserDrawer} onOpenChange={setShowUserDrawer}>
-        <DrawerContent>
-          <DrawerHeader className="text-center px-4 mb-2">
-            <DrawerTitle>{user?.nickname}</DrawerTitle>
-            <DrawerDescription>请选择操作</DrawerDescription>
-          </DrawerHeader>
-          <div className="flex flex-col gap-3 px-6 pb-8 pt-2">
-            <Button
-              variant="secondary"
-              className="w-full justify-center h-11"
-              onClick={handleCopyCookie}
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              复制 Cookie
-            </Button>
-            <Button
-              variant="destructive"
-              className="w-full justify-center h-11"
-              onClick={handleLogout}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              退出登录
+              {loginMode === "qr" ? "改用 Cookie 登录" : "返回扫码登录"}
             </Button>
           </div>
         </DrawerContent>

@@ -50,13 +50,13 @@ export const CommonDetailHeader = memo(function CommonDetailHeader({
   // 根据是否有描述，动态映射样式配置，避免在 JSX 中写死大量三元运算符
   const styles = {
     bar: hasDesc
-      ? "mt-3 pb-5 grid grid-cols-3 gap-2 w-full"
+      ? "mt-3 pb-5 grid grid-cols-3 gap-2 w-full md:flex md:items-center"
       : "mt-1 flex items-center gap-2",
     btn: hasDesc
-      ? "rounded-full px-3 h-9 col-span-1"
+      ? "rounded-full px-3 h-9 col-span-1 md:w-56"
       : "rounded-full px-3 h-8 gap-1.5",
     searchWrapper: hasDesc
-      ? "relative col-span-2"
+      ? "relative col-span-2 md:flex-1"
       : "relative w-40 sm:w-48 ml-auto",
     searchIcon: hasDesc
       ? "absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60"

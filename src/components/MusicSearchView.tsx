@@ -95,6 +95,8 @@ export function MusicSearchView({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isSearchingRef = useRef(false);
   const isInputFocusedRef = useRef(false);
+  const hasEditedQueryRef = useRef(false);
+  const suggestionVersionRef = useRef(0);
   const navigate = useNavigate();
 
   const visibleSourceOptions = useMemo(() => {
@@ -115,20 +117,32 @@ export function MusicSearchView({
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   useEffect(() => {
+    const query = debouncedSearchQuery.trim();
+    const suggestionVersion = ++suggestionVersionRef.current;
+
     const fetchSuggestions = async () => {
       // 守卫 1：空查询或正在搜索 → 清空并隐藏
-      if (!debouncedSearchQuery.trim() || isSearchingRef.current) {
+      if (!query || isSearchingRef.current || searchResults.length > 0) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+      if (!hasEditedQueryRef.current) {
         setSuggestions([]);
         setShowSuggestions(false);
         return;
       }
       try {
-        const results =
-          await musicApi.getSearchSuggestions(debouncedSearchQuery);
+        const results = await musicApi.getSearchSuggestions(query);
+        const currentQuery = searchInputRef.current?.value.trim() ?? "";
         // 守卫 2：双重检查——输入框仍聚焦 && 未进入搜索状态
         if (
+          suggestionVersion === suggestionVersionRef.current &&
+          currentQuery === query &&
+          currentQuery.length > 0 &&
           document.activeElement === searchInputRef.current &&
-          !isSearchingRef.current
+          !isSearchingRef.current &&
+          searchResults.length === 0
         ) {
           setSuggestions(results);
           setShowSuggestions(results.length > 0);
@@ -166,9 +180,17 @@ export function MusicSearchView({
   };
 
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(event.target.value);
+    const nextQuery = event.target.value;
+    const hasQuery = nextQuery.trim().length > 0;
+    hasEditedQueryRef.current = hasQuery;
+    setSearchQuery(nextQuery);
     isSearchingRef.current = false;
     setActiveSuggestionIndex(-1);
+    if (!hasQuery || searchResults.length > 0) {
+      suggestionVersionRef.current += 1;
+      setSuggestions([]);
+      setShowSuggestions(false);
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -203,7 +225,9 @@ export function MusicSearchView({
   };
 
   const clearSearch = () => {
+    suggestionVersionRef.current += 1;
     isSearchingRef.current = true;
+    hasEditedQueryRef.current = false;
     setSearchQuery("");
     setSuggestions([]);
     setShowSuggestions(false);
@@ -221,7 +245,10 @@ export function MusicSearchView({
 
   /** 用户确认搜索后统一调用（回车／点击搜索建议），锁定建议弹窗并执行搜索 */
   const performSearch = (queryText?: string) => {
+    suggestionVersionRef.current += 1;
     isSearchingRef.current = true;
+    hasEditedQueryRef.current = false;
+    setSuggestions([]);
     setShowSuggestions(false);
     const q = queryText ?? searchQuery;
     if (searchIntent?.type !== "album") setSearchIntent(null);
@@ -311,6 +338,7 @@ export function MusicSearchView({
       return;
     }
     if (searchQuery.trim().length >= 2) {
+      suggestionVersionRef.current += 1;
       isSearchingRef.current = true;
       setShowSuggestions(false);
       setSearchIntent(null);
@@ -323,9 +351,9 @@ export function MusicSearchView({
 
   /* ---------------- UI ---------------- */
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="shrink-0 border-b border-border/40 p-3">
-        <div ref={wrapperRef} className="relative w-full">
+    <div className="flex h-full min-h-0 flex-col bg-background md:bg-muted/25">
+      <div className="shrink-0 border-b border-border/40 bg-background/95 p-3 backdrop-blur md:border-b-0 md:bg-transparent md:px-6 md:pb-4 md:pt-6 lg:px-8">
+        <div ref={wrapperRef} className="relative mx-auto w-full max-w-7xl">
           {/* 搜索框主体 */}
           <div className="relative flex h-11 items-center rounded-xl bg-muted/40 px-3 transition-colors focus-within:bg-background focus-within:ring-1 focus-within:ring-ring focus-within:shadow-sm hover:bg-muted/60">
             {searchLoading ? (
@@ -341,7 +369,9 @@ export function MusicSearchView({
               onKeyDown={handleKeyDown}
               onFocus={() => {
                 isInputFocusedRef.current = true;
-                if (suggestions.length > 0) setShowSuggestions(true);
+                if (suggestions.length > 0 && searchResults.length === 0) {
+                  setShowSuggestions(true);
+                }
               }}
               onBlur={() => {
                 isInputFocusedRef.current = false;
@@ -400,13 +430,15 @@ export function MusicSearchView({
       </div>
 
       {/* 列表区域 */}
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1 md:px-6 md:pb-[calc(var(--now-playing-base-height)+2rem)] lg:px-8">
         {!searchQuery.trim() ? (
-          <PlaylistMarket />
+          <div className="mx-auto h-full w-full max-w-7xl overflow-hidden rounded-none bg-background md:rounded-lg md:border md:border-border/60 md:shadow-sm">
+            <PlaylistMarket />
+          </div>
         ) : (
           <div
             ref={resultsScrollRef}
-            className="flex h-full min-h-0 flex-col overflow-y-auto"
+            className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col overflow-y-auto bg-background md:rounded-lg md:border md:border-border/60 md:shadow-sm"
           >
             <MusicTrackList
               tracks={searchResults}

@@ -60,25 +60,30 @@ export function GenericDetailPage({
 
   return (
     <PageLayout title={detail?.title ?? title} onBack={onBack} action={action}>
-      <div ref={scrollRef} className="h-full overflow-y-auto custom-scrollbar">
-        <div className="pb-24">
-          {detail && (
-            <CommonDetailHeader
-              title={detail.title}
-              coverUrl={detail.coverUrl}
-              description={detail.description}
-              creator={detail.creator}
-              countDesc={detail.countDesc}
-              publishTime={detail.publishTime}
-              fallbackIcon={detail.fallbackIcon}
-              isShuffle={isShuffle}
-              tracks={tracks}
-              onPlayTrack={onPlayTrack}
-              searchQuery={searchQuery}
-              onSearchChange={onSearchChange}
-            />
-          )}
-          {children}
+      <div
+        ref={scrollRef}
+        className="h-full overflow-y-auto bg-background custom-scrollbar md:bg-muted/25 md:px-6 md:pb-[calc(var(--now-playing-base-height)+2rem)] md:pt-6 lg:px-8"
+      >
+        <div className="mx-auto w-full max-w-7xl overflow-hidden bg-background pb-24 md:rounded-lg md:border md:border-border/60 md:shadow-sm">
+          <div>
+            {detail && (
+              <CommonDetailHeader
+                title={detail.title}
+                coverUrl={detail.coverUrl}
+                description={detail.description}
+                creator={detail.creator}
+                countDesc={detail.countDesc}
+                publishTime={detail.publishTime}
+                fallbackIcon={detail.fallbackIcon}
+                isShuffle={isShuffle}
+                tracks={tracks}
+                onPlayTrack={onPlayTrack}
+                searchQuery={searchQuery}
+                onSearchChange={onSearchChange}
+              />
+            )}
+            {children}
+          </div>
         </div>
       </div>
     </PageLayout>

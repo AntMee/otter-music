@@ -1,10 +1,9 @@
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { writeClipboardText } from "@/lib/clipboard";
 import { usePodcastStore } from "@/store/podcast-store";
 import type { PodcastRssSource } from "@/types/podcast";
 import toast from "react-hot-toast";
-import { Copy, Edit, Trash2, Podcast, type LucideIcon } from "lucide-react";
+import { Copy, Edit, Trash2, Podcast } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MusicCover } from "@/components/MusicCover";
 import { ReactNode } from "react";
@@ -23,7 +22,7 @@ const ActionButton = ({
   className,
 }: {
   onClick?: () => void;
-  icon: LucideIcon;
+  icon: React.ElementType;
   children: ReactNode;
   className?: string;
 }) => (
@@ -45,11 +44,11 @@ export function PodcastActionDrawer({
   const { removeRssSource } = usePodcastStore();
 
   const handleCopy = async () => {
-    const ok = await writeClipboardText(rss.rssUrl);
-    if (ok) {
+    try {
+      await navigator.clipboard.writeText(rss.rssUrl);
       toast.success("RSS 链接已复制");
       onOpenChange(false);
-    } else {
+    } catch {
       toast.error("复制失败");
     }
   };

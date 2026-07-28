@@ -142,6 +142,23 @@
 }
 
 @layer utilities {
+  @media (min-width: 768px) {
+    [data-slot="drawer-content"][data-vaul-drawer-direction="bottom"] {
+      inset-inline: auto !important;
+      top: auto !important;
+      right: auto !important;
+      bottom: 32px !important;
+      left: max(32px, calc((100vw - 520px) / 2)) !important;
+      width: min(520px, calc(100vw - 64px)) !important;
+      height: fit-content !important;
+      max-height: 78vh !important;
+      margin-top: 0 !important;
+      padding-bottom: 0 !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 1rem !important;
+    }
+  }
+
   .pt-safe {
     padding-top: var(--safe-area-top);
   }

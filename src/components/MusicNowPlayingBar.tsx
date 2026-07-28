@@ -61,10 +61,8 @@ export function MusicNowPlayingBar({
   );
 
   const handleClearQueue = () => {
-    if (confirm("确定要清空播放列表吗？")) {
-      clearQueue();
-      toast.success("播放列表已清空");
-    }
+    clearQueue();
+    toast.success("播放列表已清空");
   };
 
   const handleRemoveFromQueue = useCallback(
@@ -80,25 +78,31 @@ export function MusicNowPlayingBar({
   const strokeDashoffset = circumference * (1 - progress / 100);
 
   if (!currentTrack) {
-    return null; // 使用 null 替代 undefined 更符合 React 规范
+    return null;
   }
 
   return (
-    <div className={cn(isTab ? "px-3" : "w-full")}>
+    <div
+      className={cn(
+        isTab
+          ? "px-3 md:mx-auto md:max-w-7xl md:px-6 lg:px-8"
+          : "w-full md:mx-auto md:max-w-7xl md:px-6 lg:px-8"
+      )}
+    >
       <div
         className={cn(
           "flex items-center backdrop-blur-sm transition-all duration-300",
           isTab
-            ? "gap-2 px-2 py-1.5 rounded-2xl bg-card/95 shadow-md border border-border/50"
-            : "gap-3 px-4 py-2.5 bg-background/95 border-t border-border/50 pb-[calc(0.75rem+var(--safe-area-bottom))]"
+            ? "gap-2 rounded-2xl border border-border/50 bg-card/95 px-2 py-1.5 shadow-md md:rounded-lg md:px-3 md:py-2"
+            : "gap-3 bg-background/95 px-4 py-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-border/50 md:rounded-lg md:border md:border-border/50 md:bg-card/95 md:px-3 md:py-2 md:pb-2 md:shadow-md"
         )}
       >
-        {/* 不含列表按钮，避免遮罩层关闭时 ghost click 误触发全屏 */}
+        {/* Keep the queue trigger outside this area to avoid ghost-click fullscreen opens. */}
         <div
           className="flex items-center flex-1 min-w-0 cursor-pointer"
           onClick={() => onOpenFullScreen?.()}
         >
-          {/* 专辑封面 */}
+          {/* Cover */}
           <div
             className={cn(
               "relative shrink-0 overflow-hidden rounded-md transition-all duration-300 shadow-sm",
@@ -113,7 +117,7 @@ export function MusicNowPlayingBar({
             />
           </div>
 
-          {/* 歌曲信息 - 单行 */}
+          {/* Track info */}
           <p className="flex-1 min-w-0 truncate flex items-baseline gap-1.5 ml-2">
             <span
               className={cn(
@@ -133,16 +137,16 @@ export function MusicNowPlayingBar({
             </span>
           </p>
 
-          {/* 圆环播放按钮 */}
+          {/* Progress play button */}
           <div
             className={cn(
               "relative shrink-0 transition-all duration-300 ml-2",
               isTab ? "w-9 h-9" : "w-11 h-11"
             )}
           >
-            {/* SVG 圆环进度 (利用 viewBox 自动等比缩放) */}
+            {/* Circular progress scales with the viewBox. */}
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
-              {/* 背景圆环 */}
+              {/* Progress background */}
               <circle
                 cx="20"
                 cy="20"
@@ -152,7 +156,7 @@ export function MusicNowPlayingBar({
                 strokeWidth={isTab ? "2" : "2.5"}
                 className="text-muted/30 transition-all duration-300"
               />
-              {/* 进度圆环 - 从上方开始 */}
+              {/* Progress ring starts from the top. */}
               <circle
                 cx="20"
                 cy="20"
@@ -168,7 +172,7 @@ export function MusicNowPlayingBar({
               />
             </svg>
 
-            {/* 播放按钮 */}
+            {/* Play button */}
             <button
               className="absolute inset-0 flex items-center justify-center text-primary hover:text-primary/80 transition-colors focus:outline-none"
               onClick={(e) => {
@@ -196,7 +200,7 @@ export function MusicNowPlayingBar({
           </div>
         </div>
 
-        {/* 与可点击区域为兄弟节点，ghost click 不会冒泡 */}
+        {/* Separate sibling node so overlay close clicks do not bubble into fullscreen. */}
         <PlayerQueueDrawer
           queue={queue}
           currentIndex={currentIndex}

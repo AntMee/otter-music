@@ -14,16 +14,7 @@ import {
 } from "@/store/music-store";
 import { useShallow } from "zustand/react/shallow";
 import { Slider } from "./ui/slider";
-import {
-  Image,
-  Palette,
-  Volume2,
-  Wand2,
-  Trash2,
-  Tag,
-  Database,
-  Shield,
-} from "lucide-react";
+import { Image, Palette, Volume2, Wand2, Trash2, Tag } from "lucide-react";
 import { Switch } from "./ui/switch";
 import {
   Select,
@@ -32,7 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { DownloadSetting } from "./settings/DownloadSetting";
+import { DownloadQualitySelect } from "./settings/DownloadQualitySelect";
+import { DownloadSettingToggles } from "./settings/DownloadSettingToggles";
+import { DownloadDirectorySelect } from "./settings/DownloadDirectorySelect";
 import { SettingItem } from "./settings/SettingItem";
 import { UpdateCheck } from "./settings/UpdateCheck";
 import { IssueLogs } from "./settings/IssueLogs";
@@ -40,9 +33,6 @@ import { StreamCacheSetting } from "./settings/StreamCacheSetting";
 import { SleepTimerSetting } from "./settings/SleepTimerSetting";
 import { PlaybackSpeedSetting } from "./settings/PlaybackSpeedSetting";
 import { AutoMatchSuffixSetting } from "./settings/AutoMatchSuffixSetting";
-import { AutoMatchSetting } from "./settings/AutoMatchSetting";
-import { DataBackup } from "./settings/DataBackup";
-import { useState } from "react";
 
 interface SettingsPageProps {
   onBack?: () => void;
@@ -56,24 +46,22 @@ function SettingsSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-6">
-      <h3 className="text-sm font-medium text-muted-foreground mb-2 px-1">
+    <section className="mb-6 md:mb-7">
+      <h3 className="px-1 mb-2 text-sm font-medium text-muted-foreground md:px-0">
         {title}
       </h3>
       <div className="space-y-3">{children}</div>
-    </div>
+    </section>
   );
 }
 
 export function SettingsPage({ onBack }: SettingsPageProps) {
   const navigate = useNavigate();
-  const [dataBackupOpen, setDataBackupOpen] = useState(false);
   const {
     volume,
     setVolume,
     enableAutoMatch,
-    enableProxyFallback,
-    setEnableProxyFallback,
+    setEnableAutoMatch,
     bilibiliKeepOriginalMeta,
     setBilibiliKeepOriginalMeta,
     showSourceBadge,
@@ -85,8 +73,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       volume: state.volume,
       setVolume: state.setVolume,
       enableAutoMatch: state.enableAutoMatch,
-      enableProxyFallback: state.enableProxyFallback,
-      setEnableProxyFallback: state.setEnableProxyFallback,
+      setEnableAutoMatch: state.setEnableAutoMatch,
       bilibiliKeepOriginalMeta: state.bilibiliKeepOriginalMeta,
       setBilibiliKeepOriginalMeta: state.setBilibiliKeepOriginalMeta,
       showSourceBadge: state.showSourceBadge,
@@ -98,132 +85,134 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
 
   return (
     <PageLayout title="系统设置" onBack={onBack}>
-      <div className="flex-1 p-4 pb-28 overflow-y-auto">
-        <SettingsSection title="常用设置">
-          <AggregatedSourceSelect />
-          <SettingItem
-            icon={Volume2}
-            title="音量调节"
-            action={
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground w-10 text-right">
-                  {Math.round(volume * 100)}%
-                </span>
-                <Slider
-                  value={[volume * 100]}
-                  onValueChange={([value]) => setVolume(value / 100)}
-                  min={0}
-                  max={100}
-                  step={1}
-                  className="w-32"
-                />
-              </div>
-            }
-          />
-          <QualitySelect />
-          <SleepTimerSetting />
-          <PlaybackSpeedSetting />
-          <DownloadSetting />
-        </SettingsSection>
-
-        <SettingsSection title="界面设置">
-          <SettingItem
-            icon={Palette}
-            title="主题切换"
-            action={<ThemeToggle />}
-          />
-          <SettingItem
-            icon={Tag}
-            title="显示音源标签"
-            subtitle="在歌曲列表中始终显示音源平台标签"
-            action={
-              <Switch
-                checked={showSourceBadge}
-                onCheckedChange={setShowSourceBadge}
-              />
-            }
-          />
-          <SettingItem
-            icon={Image}
-            title="全屏背景"
-            action={
-              <Select
-                value={fullScreenBackgroundMode}
-                onValueChange={(value) =>
-                  setFullScreenBackgroundMode(value as FullScreenBackgroundMode)
+      <div className="flex-1 overflow-y-auto bg-background md:bg-muted/25">
+        <div className="mx-auto w-full max-w-4xl p-4 pb-28 md:px-6 md:py-6 lg:px-8">
+          <div className="md:rounded-2xl md:border md:bg-background/85 md:p-5 md:shadow-sm lg:p-6">
+            <SettingsSection title="常用设置">
+              <SettingItem
+                icon={Wand2}
+                title="智能音源"
+                subtitle="🧙‍♀️自动切换到可用的免费音源"
+                action={
+                  <Switch
+                    checked={enableAutoMatch}
+                    onCheckedChange={setEnableAutoMatch}
+                  />
                 }
-              >
-                <SelectTrigger className="h-7 px-2 bg-transparent border-muted hover:bg-muted/20 w-36">
-                  <SelectValue placeholder="背景" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="theme">动态主题色</SelectItem>
-                  <SelectItem value="cover">模糊封面</SelectItem>
-                  <SelectItem value="texture">深色质感</SelectItem>
-                </SelectContent>
-              </Select>
-            }
-          />
-        </SettingsSection>
-
-        <SettingsSection title="账号数据">
-          <NeteaseLogin />
-          <SyncConfig />
-          <SettingItem
-            icon={Database}
-            title="数据备份"
-            subtitle="导出或导入全部收藏、歌单与设置"
-            onClick={() => setDataBackupOpen(true)}
-            showChevron
-          />
-          <SettingItem
-            icon={Trash2}
-            title="回收站"
-            subtitle="恢复误删的歌曲和歌单"
-            onClick={() => navigate("/settings/trash")}
-            showChevron
-          />
-        </SettingsSection>
-
-        <SettingsSection title="B站设置">
-          <SettingItem
-            icon={Wand2}
-            title="换源保留原信息"
-            subtitle="自动换源到B站时保留原标题和歌手"
-            action={
-              <Switch
-                checked={bilibiliKeepOriginalMeta}
-                onCheckedChange={setBilibiliKeepOriginalMeta}
-                disabled={!enableAutoMatch}
               />
-            }
-          />
-          <AutoMatchSuffixSetting />
-        </SettingsSection>
-
-        <SettingsSection title="高级设置">
-          <ApiUrlConfig />
-          <SettingItem
-            icon={Shield}
-            title="代理回退"
-            subtitle="自动切换代理线路（但容易卡顿）"
-            action={
-              <Switch
-                checked={enableProxyFallback}
-                onCheckedChange={setEnableProxyFallback}
+              <AggregatedSourceSelect />
+              <SettingItem
+                icon={Volume2}
+                title="音量调节"
+                action={
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground w-10 text-right">
+                      {Math.round(volume * 100)}%
+                    </span>
+                    <Slider
+                      value={[volume * 100]}
+                      onValueChange={([value]) => setVolume(value / 100)}
+                      min={0}
+                      max={100}
+                      step={1}
+                      className="w-32"
+                    />
+                  </div>
+                }
               />
-            }
-          />
-          <AutoMatchSetting />
-          <StreamCacheSetting />
-        </SettingsSection>
+              <QualitySelect />
+              <StreamCacheSetting />
+              <SleepTimerSetting />
+              <PlaybackSpeedSetting />
+            </SettingsSection>
 
-        <SettingsSection title="关于系统">
-          <UpdateCheck />
-          <IssueLogs />
-        </SettingsSection>
+            <SettingsSection title="界面设置">
+              <SettingItem
+                icon={Palette}
+                title="主题切换"
+                action={<ThemeToggle />}
+              />
+              <SettingItem
+                icon={Tag}
+                title="显示音源标签"
+                subtitle="在歌曲列表中始终显示音源平台标签"
+                action={
+                  <Switch
+                    checked={showSourceBadge}
+                    onCheckedChange={setShowSourceBadge}
+                  />
+                }
+              />
+              <SettingItem
+                icon={Image}
+                title="全屏背景"
+                action={
+                  <Select
+                    value={fullScreenBackgroundMode}
+                    onValueChange={(value) =>
+                      setFullScreenBackgroundMode(
+                        value as FullScreenBackgroundMode
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-7 px-2 bg-transparent border-muted hover:bg-muted/20 w-36">
+                      <SelectValue placeholder="背景" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="theme">动态主题色</SelectItem>
+                      <SelectItem value="cover">模糊封面</SelectItem>
+                      <SelectItem value="texture">深色质感</SelectItem>
+                    </SelectContent>
+                  </Select>
+                }
+              />
+            </SettingsSection>
+
+            <SettingsSection title="下载设置">
+              <DownloadQualitySelect />
+              <DownloadSettingToggles />
+              <DownloadDirectorySelect />
+            </SettingsSection>
+
+            <SettingsSection title="账号数据">
+              <NeteaseLogin />
+              <SyncConfig />
+              <SettingItem
+                icon={Trash2}
+                title="回收站"
+                subtitle="恢复误删的歌曲和歌单"
+                onClick={() => navigate("/settings/trash")}
+                showChevron
+              />
+            </SettingsSection>
+
+            <SettingsSection title="B站设置">
+              <SettingItem
+                icon={Wand2}
+                title="换源保留原信息"
+                subtitle="自动换源到B站时保留原标题和歌手"
+                action={
+                  <Switch
+                    checked={bilibiliKeepOriginalMeta}
+                    onCheckedChange={setBilibiliKeepOriginalMeta}
+                    disabled={!enableAutoMatch}
+                  />
+                }
+              />
+              <AutoMatchSuffixSetting />
+            </SettingsSection>
+
+            <SettingsSection title="高级设置">
+              <ApiUrlConfig />
+            </SettingsSection>
+
+            <SettingsSection title="关于系统">
+              <UpdateCheck />
+              <IssueLogs />
+            </SettingsSection>
+          </div>
+        </div>
       </div>
-      <DataBackup open={dataBackupOpen} onOpenChange={setDataBackupOpen} />
     </PageLayout>
   );
 }
